@@ -1,0 +1,12 @@
+processed 3 tasks
+
+init:
+A: object(0,0), B: object(0,1)
+
+task 1 'publish'. lines 9-32:
+created: object(1,0)
+mutated: object(0,2)
+
+task 2 'run'. lines 34-34:
+created: object(2,0), object(2,1), object(2,2)
+mutated: object(0,0)
