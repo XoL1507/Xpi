@@ -1,0 +1,7 @@
+div.home {
+    @apply bg-white;
+}
+
+div.container {
+    @apply mx-auto grid md:grid-cols-2 grid-cols-1;
+}
