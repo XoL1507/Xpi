@@ -1,0 +1,415 @@
+// Copyright (c) Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+import { CoinFormat, useFormatCoin, getAmount } from '@mysten/core';
+import {
+    getTransactionKindName,
+    getTransactionKind,
+    getTransactionSender,
+    SUI_TYPE_ARG,
+    getExecutionStatusType,
+    getTotalGasUsed,
+    getExecutionStatusError,
+    type SuiTransactionResponse,
+    getGasData,
+    getTransactionDigest,
+} from '@mysten/sui.js';
+import clsx from 'clsx';
+import { useMemo, useState } from 'react';
+
+// import {
+//     eventToDisplay,
+//     getAddressesLinks,
+// } from '../../components/events/eventDisplay';
+import Pagination from '../../components/pagination/Pagination';
+import { Signatures } from './Signatures';
+import TxLinks from './TxLinks';
+
+import styles from './TransactionResult.module.css';
+
+import { Banner } from '~/ui/Banner';
+import { DateCard } from '~/ui/DateCard';
+import { DescriptionList, DescriptionItem } from '~/ui/DescriptionList';
+import { ObjectLink } from '~/ui/InternalLink';
+import { PageHeader } from '~/ui/PageHeader';
+import { StatAmount } from '~/ui/StatAmount';
+import { TableHeader } from '~/ui/TableHeader';
+import { Tab, TabGroup, TabList, TabPanel, TabPanels } from '~/ui/Tabs';
+import { Text } from '~/ui/Text';
+import { Tooltip } from '~/ui/Tooltip';
+import {
+    RecipientTransactionAddresses,
+    SenderTransactionAddress,
+    SponsorTransactionAddress,
+} from '~/ui/TransactionAddressSection';
+import { ReactComponent as ChevronDownIcon } from '~/ui/icons/chevron_down.svg';
+
+const MAX_RECIPIENTS_PER_PAGE = 10;
+
+function generateMutatedCreated(tx: SuiTransactionResponse) {
+    return [
+        ...(tx.effects!.mutated?.length
+            ? [
+                  {
+                      label: 'Updated',
+                      links: tx.effects!.mutated.map((item) => item.reference),
+                  },
+              ]
+            : []),
+        ...(tx.effects!.created?.length
+            ? [
+                  {
+                      label: 'Created',
+                      links: tx.effects!.created?.map((item) => item.reference),
+                  },
+              ]
+            : []),
+    ];
+}
+
+function GasAmount({
+    amount,
+    expandable,
+    expanded,
+}: {
+    amount?: bigint | number;
+    expandable?: boolean;
+    expanded?: boolean;
+}) {
+    const [formattedAmount, symbol] = useFormatCoin(
+        amount,
+        SUI_TYPE_ARG,
+        CoinFormat.FULL
+    );
+
+    return (
+        <div className="flex h-full items-center gap-1">
+            <div className="flex items-baseline gap-0.5 text-gray-90">
+                <Text variant="body/medium">{formattedAmount}</Text>
+                <Text variant="subtitleSmall/medium">{symbol}</Text>
+            </div>
+
+            <Text variant="bodySmall/medium">
+                <div className="flex items-center text-steel">
+                    (
+                    <div className="flex items-baseline gap-0.5">
+                        <div>{amount?.toLocaleString()}</div>
+                        <Text variant="subtitleSmall/medium">MIST</Text>
+                    </div>
+                    )
+                </div>
+            </Text>
+
+            {expandable && (
+                <ChevronDownIcon
+                    height={12}
+                    width={12}
+                    className={clsx('text-steel', expanded && 'rotate-180')}
+                />
+            )}
+        </div>
+    );
+}
+
+export function TransactionView({
+    transaction,
+}: {
+    transaction: SuiTransactionResponse;
+}) {
+    const sender = getTransactionSender(transaction)!;
+    const gasUsed = transaction?.effects!.gasUsed;
+
+    const [gasFeesExpanded, setGasFeesExpanded] = useState(false);
+
+    const [recipientsPageNumber, setRecipientsPageNumber] = useState(1);
+
+    const coinTransfer = getAmount(transaction);
+
+    // Primary amount from sender and SUI coin type
+    const transferAmount = coinTransfer?.find(
+        ({ address }) => address === sender
+    );
+    // casting here to avoid address type being null
+    // Depending on the size of coinBalance, we may need to use a different approach
+    const coinTranferRecipients =
+        (coinTransfer?.filter(
+            ({ address }) => address && address !== sender
+        ) as {
+            address: string;
+            amount: number;
+            coinType: string;
+        }[]) || null;
+
+    const recipients = useMemo(() => {
+        const startAt = (recipientsPageNumber - 1) * MAX_RECIPIENTS_PER_PAGE;
+        const endAt = recipientsPageNumber * MAX_RECIPIENTS_PER_PAGE;
+        return coinTranferRecipients?.slice(startAt, endAt);
+    }, [coinTranferRecipients, recipientsPageNumber]);
+
+    // show amount for sender and SUI coin type
+    const totalRecipientsCount = coinTransfer?.length;
+
+    const [formattedAmount, symbol] = useFormatCoin(
+        Math.abs(transferAmount?.amount || 0),
+        transferAmount?.coinType
+    );
+
+    // const txKindData = formatByTransactionKind(txKindName, txnDetails, sender);
+    // const txEventData = transaction.events?.map(eventToDisplay);
+
+    // MUSTFIX(chris): re-enable event display
+    // let eventTitles: [string, string][] = [];
+    // const txEventDisplay = txEventData?.map((ed, index) => {
+    //     if (!ed) return <div />;
+
+    //     let key = ed.top.title + index;
+    //     eventTitles.push([ed.top.title, key]);
+    //     return (
+    //         <div className={styles.txgridcomponent} key={key}>
+    //             <ItemView data={ed.top as TxItemView} />
+    //             {ed.fields && <ItemView data={ed.fields as TxItemView} />}
+    //         </div>
+    //     );
+    // });
+
+    // let eventTitlesDisplay = eventTitles.map(([title, key]) => (
+    //     <div key={key} className={styles.eventtitle}>
+    //         {title}
+    //     </div>
+    // ));
+
+    const createdMutateData = generateMutatedCreated(transaction);
+
+    // MUSTFIX(chris): re-enable event display
+    // const hasEvents = txEventData && txEventData.length > 0;
+    const hasEvents = false;
+
+    const txError = getExecutionStatusError(transaction);
+
+    const gasData = getGasData(transaction)!;
+    const gasPrice = gasData.price || 1;
+    const gasPayment = gasData.payment;
+    const gasBudget = gasData.budget;
+    const gasOwner = gasData.owner;
+    const isSponsoredTransaction = gasOwner !== sender;
+
+    const timestamp = transaction.timestampMs;
+
+    return (
+        <div className={clsx(styles.txdetailsbg)}>
+            <div className="mt-5 mb-10">
+                <PageHeader
+                    type="Transaction"
+                    title={getTransactionDigest(transaction)}
+                    subtitle={getTransactionKindName(
+                        getTransactionKind(transaction)!
+                    )}
+                    status={getExecutionStatusType(transaction)}
+                />
+                {txError && (
+                    <div className="mt-2">
+                        <Banner variant="error">{txError}</Banner>
+                    </div>
+                )}
+            </div>
+            <TabGroup size="lg">
+                <TabList>
+                    <Tab>Details</Tab>
+                    {hasEvents && <Tab>Events</Tab>}
+                    <Tab>Signatures</Tab>
+                </TabList>
+                <TabPanels>
+                    <TabPanel>
+                        <div
+                            className={styles.txgridcomponent}
+                            // TODO: Change to test ID
+                            id={getTransactionDigest(transaction)}
+                        >
+                            <section
+                                className={clsx([
+                                    styles.txcomponent,
+                                    styles.txsender,
+                                    'md:ml-4',
+                                ])}
+                                data-testid="transaction-timestamp"
+                            >
+                                {transferAmount &&
+                                transferAmount.amount > 0 &&
+                                formattedAmount ? (
+                                    <section className="mb-10">
+                                        <StatAmount
+                                            amount={formattedAmount}
+                                            symbol={symbol}
+                                            date={timestamp}
+                                        />
+                                    </section>
+                                ) : (
+                                    timestamp && (
+                                        <div className="mb-3">
+                                            <DateCard date={timestamp} />
+                                        </div>
+                                    )
+                                )}
+                                {isSponsoredTransaction && (
+                                    <div className="mt-10">
+                                        <SponsorTransactionAddress
+                                            sponsor={gasOwner}
+                                        />
+                                    </div>
+                                )}
+                                <div className="mt-10">
+                                    <SenderTransactionAddress sender={sender} />
+                                </div>
+                                {recipients?.length > 0 && (
+                                    <div className="mt-10">
+                                        <RecipientTransactionAddresses
+                                            recipients={recipients}
+                                        />
+                                    </div>
+                                )}
+                                <div className="mt-5 flex w-full max-w-lg">
+                                    {totalRecipientsCount &&
+                                        totalRecipientsCount >
+                                            MAX_RECIPIENTS_PER_PAGE && (
+                                            <Pagination
+                                                totalItems={
+                                                    totalRecipientsCount
+                                                }
+                                                itemsPerPage={
+                                                    MAX_RECIPIENTS_PER_PAGE
+                                                }
+                                                currentPage={
+                                                    recipientsPageNumber
+                                                }
+                                                onPagiChangeFn={
+                                                    setRecipientsPageNumber
+                                                }
+                                            />
+                                        )}
+                                </div>
+                            </section>
+
+                            <section
+                                className={clsx([
+                                    styles.txcomponent,
+                                    styles.txgridcolspan2,
+                                ])}
+                            >
+                                <div className={styles.txlinks}>
+                                    {createdMutateData.map((item, idx) => (
+                                        <TxLinks data={item} key={idx} />
+                                    ))}
+                                </div>
+                            </section>
+                        </div>
+                        <div data-testid="gas-breakdown" className="mt-8">
+                            <TableHeader
+                                subText={
+                                    isSponsoredTransaction
+                                        ? '(Paid by Sponsor)'
+                                        : undefined
+                                }
+                            >
+                                Gas & Storage Fees
+                            </TableHeader>
+
+                            <DescriptionList>
+                                <DescriptionItem title="Gas Payment">
+                                    <ObjectLink
+                                        // TODO: support multiple gas coins
+                                        objectId={gasPayment[0].objectId}
+                                    />
+                                </DescriptionItem>
+
+                                <DescriptionItem title="Gas Budget">
+                                    <GasAmount amount={gasBudget} />
+                                </DescriptionItem>
+
+                                {gasFeesExpanded && (
+                                    <>
+                                        <DescriptionItem title="Gas Price">
+                                            <GasAmount amount={gasPrice} />
+                                        </DescriptionItem>
+                                        <DescriptionItem title="Computation Fee">
+                                            <GasAmount
+                                                amount={
+                                                    gasUsed?.computationCost
+                                                }
+                                            />
+                                        </DescriptionItem>
+
+                                        <DescriptionItem title="Storage Fee">
+                                            <GasAmount
+                                                amount={gasUsed?.storageCost}
+                                            />
+                                        </DescriptionItem>
+
+                                        <DescriptionItem title="Storage Rebate">
+                                            <GasAmount
+                                                amount={gasUsed?.storageRebate}
+                                            />
+                                        </DescriptionItem>
+
+                                        <div className="h-px bg-gray-45" />
+                                    </>
+                                )}
+
+                                <DescriptionItem
+                                    title={
+                                        <Text
+                                            variant="body/semibold"
+                                            color="steel-darker"
+                                        >
+                                            Total Gas Fee
+                                        </Text>
+                                    }
+                                >
+                                    <Tooltip
+                                        tip={
+                                            gasFeesExpanded
+                                                ? 'Hide Gas Fee breakdown'
+                                                : 'Show Gas Fee breakdown'
+                                        }
+                                    >
+                                        <button
+                                            className="cursor-pointer border-none bg-inherit p-0"
+                                            type="button"
+                                            onClick={() =>
+                                                setGasFeesExpanded(
+                                                    (expanded) => !expanded
+                                                )
+                                            }
+                                        >
+                                            <GasAmount
+                                                amount={getTotalGasUsed(
+                                                    transaction
+                                                )}
+                                                expanded={gasFeesExpanded}
+                                                expandable
+                                            />
+                                        </button>
+                                    </Tooltip>
+                                </DescriptionItem>
+                            </DescriptionList>
+                        </div>
+                    </TabPanel>
+                    {/* {hasEvents && (
+                        <TabPanel>
+                            <div className={styles.txevents}>
+                                <div className={styles.txeventsleft}>
+                                    {eventTitlesDisplay}
+                                </div>
+                                <div className={styles.txeventsright}>
+                                    {txEventDisplay}
+                                </div>
+                            </div>
+                        </TabPanel>
+                    )} */}
+                    <TabPanel>
+                        <Signatures transaction={transaction} />
+                    </TabPanel>
+                </TabPanels>
+            </TabGroup>
+        </div>
+    );
+}
