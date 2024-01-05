@@ -1,0 +1,109 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sui",
+    "crates/sui-adapter",
+    "crates/sui-adapter-transactional-tests",
+    "crates/sui-benchmark",
+    "crates/sui-cluster-test",
+    "crates/sui-config",
+    "crates/sui-core",
+    "crates/sui-cost",
+    "crates/sui-cost-tables",
+    "crates/sui-faucet",
+    "crates/sui-framework",
+    "crates/sui-framework-build",
+    "crates/sui-gateway",
+    "crates/sui-json",
+    "crates/sui-json-rpc",
+    "crates/sui-json-rpc-types",
+    "crates/sui-keys",
+    "crates/sui-macros",
+    "crates/sui-metrics",
+    "crates/sui-network",
+    "crates/sui-node",
+    "crates/sui-open-rpc",
+    "crates/sui-open-rpc-macros",
+    "crates/sui-rosetta",
+    "crates/sui-sdk",
+    "crates/sui-simulator",
+    "crates/sui-storage",
+    "crates/sui-swarm",
+    "crates/sui-telemetry",
+    "crates/sui-test-validator",
+    "crates/sui-tool",
+    "crates/sui-transaction-builder",
+    "crates/sui-transactional-test-runner",
+    "crates/sui-types",
+    "crates/sui-verifier",
+    "crates/sui-verifier-transactional-tests",
+    "crates/test-utils",
+    "crates/workspace-hack",
+    "crates/x",
+    "narwhal/config", "narwhal/consensus", "narwhal/crypto", "narwhal/dag", "narwhal/examples", "narwhal/executor", "narwhal/network", "narwhal/node", "narwhal/primary", "narwhal/storage", "narwhal/test-utils", "narwhal/types", "narwhal/worker",
+]
+
+[workspace.package]
+# This version string will be inherited by sui-core, sui-faucet, sui-node, sui-tools, sui-sdk, and sui crates
+version = "0.15.3"
+
+[profile.release]
+# debug = 1 means line charts only, which is minimum needed for good stack traces
+debug = 1
+strip = 'none'
+# Exit process with SIGABRT when any thread panics
+panic = 'abort'
+
+[profile.bench]
+# debug = 1 means line charts only, which is minimum needed for good stack traces
+debug = 1
+strip = 'none'
+
+[profile.simulator]
+inherits = "test"
+debug = true
+debug-assertions = true
+overflow-checks = true
+# opt-level 1 gives >5x speedup for simulator tests without slowing down build times very much.
+opt-level = 1
+
+# Dependencies that should be kept in sync through the whole workspace
+[workspace.dependencies]
+
+# github.com/MystenLabs/mysten-infra dependencies
+typed-store = "0.4.0"
+typed-store-derive = "0.3.0"
+telemetry-subscribers = { version = "0.2.0", features = ["jaeger", "tokio-console"] }
+mysten-network = { git = "https://github.com/MystenLabs/mysten-infra.git", rev = "62dd8c9c4aa0f5ed2c243546d159d9cf2816f3d9" }
+name-variant = "0.1.0"
+store = { version = "0.4.0", package = "typed-store" }
+
+# Move dependencies
+move-binary-format = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-bytecode-utils = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-bytecode-verifier = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-cli = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-compiler = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-core-types = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb", features = ["address20"] }
+move-disassembler = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-package = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-stdlib = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-vm-runtime = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-unit-test = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-vm-test-utils = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-vm-types = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-command-line-common = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-transactional-test-runner = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-ir-types = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-prover = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+move-prover-boogie-backend = { git = "https://github.com/oxade/move", rev = "1f57982069b459ddc9012d9ee92da3823b4757cb" }
+
+fastcrypto = { git = "https://github.com/MystenLabs/fastcrypto", rev = "bbb2d02a7a64c27314721748cc4d015b00490dbe" }
+
+# anemo dependencies
+anemo = { git = "https://github.com/mystenlabs/anemo.git", rev = "74bbe807bdd4ac4d58c2aba12adc33ea1a2bc608" }
+anemo-build = { git = "https://github.com/mystenlabs/anemo.git", rev = "74bbe807bdd4ac4d58c2aba12adc33ea1a2bc608" }
+anemo-tower = { git = "https://github.com/mystenlabs/anemo.git", rev = "74bbe807bdd4ac4d58c2aba12adc33ea1a2bc608" }
+
+# Use the same workspace-hack across crates.
+workspace-hack = { path = "crates/workspace-hack" }
