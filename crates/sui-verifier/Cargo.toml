@@ -1,0 +1,16 @@
+[package]
+name = "sui-verifier"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mysten Labs <eng@mystenlabs.com>"]
+description = "Move framework for Sui platform"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+move-binary-format = { git = "https://github.com/move-language/move", rev = "79071528524f08b12e9abb84c1094d8e976aa17a" }
+move-bytecode-verifier = { git = "https://github.com/move-language/move", rev = "79071528524f08b12e9abb84c1094d8e976aa17a" }
+move-core-types = { git = "https://github.com/move-language/move", rev = "79071528524f08b12e9abb84c1094d8e976aa17a", features = ["address20"] }
+
+sui-types = { path = "../sui-types" }
+workspace-hack = { path = "../workspace-hack"}
