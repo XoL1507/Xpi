@@ -1,0 +1,48 @@
+.pagination {
+    @apply flex flex-row items-center justify-start list-none w-full;
+}
+
+.pagination ul {
+    @apply flex flex-row items-center justify-center list-none  p-0 m-0;
+}
+
+.arrow {
+    @apply block opacity-50 cursor-default !important;
+}
+
+.arrow button {
+    @apply border-transparent cursor-default;
+}
+
+.pagination ul li {
+    @apply mr-1 hidden md:block;
+}
+
+.pagination ul li button {
+    @apply text-gray-600 hover:text-gray-800 focus:text-gray-800 font-medium py-2 px-3 md:px-4 cursor-pointer 
+     md:pr-3  md:pl-3  pr-2  pl-2 border-[1px] rounded-[6px] border-white bg-[#FFFFFF] hover:bg-[#F4FBFF];
+
+    border: 1px solid #e9eaeb;
+    transition: all 0.4s ease;
+}
+
+button.activepag {
+    @apply bg-[#F4FBFF] text-sui-dark border-sui-dark !important;
+}
+
+.activearrow {
+    @apply block opacity-100 cursor-pointer !important;
+}
+
+.paginationleft svg {
+    transform: rotate(180deg);
+}
+
+.pagilink,
+.paginationdot {
+    @apply block !important;
+}
+
+.paginationdot:hover {
+    @apply bg-[#FFFFFF] hover:bg-[#FFFFFF];
+}
