@@ -1,0 +1,47 @@
+[package]
+name = "sui-framework"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mysten Labs <eng@mystenlabs.com>"]
+description = "Move framework for sui platform"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+anyhow = { version = "1.0.58", features = ["backtrace"] }
+bcs = "0.1.3"
+linked-hash-map = "0.5.6"
+smallvec = "1.9.0"
+num_enum = "0.5.7"
+once_cell = "1.13.1"
+sha3 = "0.10.1"
+curve25519-dalek-ng = "4.1.1"
+
+sui-types = { path = "../sui-types" }
+sui-framework-build = { path = "../sui-framework-build" }
+sui-verifier = { path = "../../crates/sui-verifier" }
+
+move-binary-format = { path = "/sui/move/language/move-binary-format" }
+move-bytecode-utils = { path = "/sui/move/language/tools/move-bytecode-utils" }
+move-bytecode-verifier = { path = "/sui/move/language/move-bytecode-verifier" }
+move-cli = { path = "/sui/move/language/tools/move-cli" }
+move-compiler = { path = "/sui/move/language/move-compiler" }
+move-core-types = { path = "/sui/move/language/move-core/types", features = ["address20"] }
+move-package = { path = "/sui/move/language/tools/move-package" }
+move-stdlib = { path = "/sui/move/language/move-stdlib" }
+move-unit-test = { path = "/sui/move/language/tools/move-unit-test" }
+move-vm-runtime = { path = "/sui/move/language/move-vm/runtime" }
+move-vm-types = { path = "/sui/move/language/move-vm/types" }
+fastcrypto = { git = "https://github.com/MystenLabs/fastcrypto", rev = "c022a2ae23ca7cc2778293fd3b1db42e8cd02d3b" }
+workspace-hack = { path = "../workspace-hack"}
+move-vm-test-utils = { path = "/sui/move/language/move-vm/test-utils" }
+
+[build-dependencies]
+anyhow = { version = "1.0.58", features = ["backtrace"] }
+bcs = "0.1.3"
+sui-framework-build = { path = "../sui-framework-build" }
+move-binary-format = { path = "/sui/move/language/move-binary-format" }
+move-package = { path = "/sui/move/language/tools/move-package" }
+
+[package.metadata.cargo-udeps.ignore]
+normal = ["move-cli", "move-unit-test"]
