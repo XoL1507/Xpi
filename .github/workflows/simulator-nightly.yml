@@ -1,0 +1,106 @@
+name: simtest-nightly
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # every day at 2am
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Disable incremental compilation.
+  #
+  # Incremental compilation is useful as part of an edit-build-test-edit cycle,
+  # as it lets the compiler avoid recompiling code that hasn't changed. However,
+  # on CI, we're not making small edits; we're almost always building the entire
+  # project from scratch. Thus, incremental compilation on CI actually
+  # introduces *additional* overhead to support making future builds
+  # faster...but no future builds will ever occur in any given CI environment.
+  #
+  # See https://matklad.github.io/2021/09/04/fast-rust-builds.html#ci-workflow
+  # for details.
+  CARGO_INCREMENTAL: 0
+  # Allow more retries for network requests in cargo (downloading crates) and
+  # rustup (installing toolchains). This should help to reduce flaky CI failures
+  # from transient network timeouts or other issues.
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+  # Don't emit giant backtraces in the CI logs.
+  RUST_BACKTRACE: short
+
+jobs:
+  simtest:
+    timeout-minutes: 90
+    runs-on: [ubuntu-ghcloud]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+      - uses: taiki-e/install-action@nextest
+      - name: cargo simtest
+        run: |
+          # TODO: If possible, if we build a docker image, and then run the below work inside the docker image,
+          # that would be great. The reason is that when failing seeds are found, they will only repro on linux,
+          # not mac. Therefore, to debug the failures, it would be excellent if you could just pull down the
+          # docker image that the failure happened in, so it could be reproduced locally very easily.
+
+          # build first
+          ./scripts/simtest/cargo-simtest simtest build
+          DATE=$(date +%s)
+          export RUST_LOG=off
+          echo "Using MSIM_TEST_SEED=$MSIM_TEST_SEED"
+          # TODO: get the right number of CPUs.
+          NUM_CPUS=10
+          for SUB_SEED in `seq 1 $NUM_CPUS`; do
+            SEED="$SUB_SEED$DATE"
+            LOG_FILE="log-$SEED"
+            echo "Iteration $SUB_SEED using MSIM_TEST_SEED=$SEED, logging to $LOG_FILE"
+            # TODO: need to run particular tests with different repeat counts.
+            MSIM_TEST_SEED="$SEED" MSIM_TEST_NUM=20 MSIM_WATCHDOG_TIMEOUT_MS=60000 scripts/simtest/cargo-simtest simtest --no-capture > "$LOG_FILE" 2>&1 &
+          done
+
+          # TODO: figure out which job(s) failed, ideally send the failing log file(s) to the slack channel.
+          # Also, what should the log output of the workflow as a whole be? we could just cat all the logs after running,
+          # so that they show up in the workflow UI. (We have to redirect them to individual files while running, since
+          # they are running in parallel and would get interleaved if they were all printing to stdout).
+          for JOB in $(jobs -p); do
+            wait $JOB || echo "job failed"
+          done
+
+
+  report-status:
+    name: Report Status
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [release]
+    steps:
+      - uses: technote-space/workflow-conclusion-action@v3
+      - name: Post to slack
+        uses: slackapi/slack-github-action@v1.23.0
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        if: env.WORKFLOW_CONCLUSION == 'failure' # notify only if failure
+        with:
+          # TODO: slack message should ideally include the git commit.
+          channel-id: 'simtest-nightly'
+          payload: |
+            {
+              "text": "Workflow *${{ github.workflow }}* failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Workflow *${{ github.workflow }}* failed"
+                  }
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Logs are here: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
