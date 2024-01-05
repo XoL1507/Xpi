@@ -1,0 +1,123 @@
+// Copyright (c) Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+use super::{
+    address::Address,
+    base64::Base64,
+    epoch::Epoch,
+    gas::{GasCostSummary, GasEffects, GasInput},
+    sui_address::SuiAddress,
+    tx_digest::TransactionDigest,
+};
+use async_graphql::*;
+use sui_json_rpc_types::{
+    SuiExecutionStatus, SuiTransactionBlockDataAPI, SuiTransactionBlockEffects,
+    SuiTransactionBlockEffectsAPI, SuiTransactionBlockResponse,
+};
+
+#[derive(SimpleObject, Clone, Eq, PartialEq)]
+#[graphql(complex)]
+pub(crate) struct TransactionBlock {
+    pub digest: TransactionDigest,
+    pub effects: Option<TransactionBlockEffects>,
+    pub sender: Option<Address>,
+    pub bcs: Option<Base64>,
+    pub gas_input: Option<GasInput>,
+}
+
+impl From<SuiTransactionBlockResponse> for TransactionBlock {
+    fn from(tx_block: sui_json_rpc_types::SuiTransactionBlockResponse) -> Self {
+        let transaction = tx_block.transaction.as_ref();
+        let sender = transaction.map(|tx| Address {
+            address: SuiAddress::from_array(tx.data.sender().to_inner()),
+        });
+        let gas_input = transaction.map(|tx| GasInput::from(tx.data.gas_data()));
+
+        Self {
+            digest: TransactionDigest::from_array(tx_block.digest.into_inner()),
+            effects: tx_block.effects.as_ref().map(TransactionBlockEffects::from),
+            sender,
+            bcs: Some(Base64::from(&tx_block.raw_transaction)),
+            gas_input,
+        }
+    }
+}
+
+#[ComplexObject]
+impl TransactionBlock {
+    async fn expiration(&self) -> Result<Option<Epoch>> {
+        if self.effects.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(self.effects.as_ref().unwrap().epoch.clone()))
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, SimpleObject)]
+pub(crate) struct TransactionBlockEffects {
+    pub digest: TransactionDigest,
+    #[graphql(skip)]
+    pub gas_effects: GasEffects,
+    pub status: ExecutionStatus,
+    pub errors: Option<String>,
+    // pub transaction_block: TransactionBlock,
+    // pub dependencies: Vec<TransactionBlock>,
+    // pub lamport_version: Option<u64>,
+    // pub object_reads: Vec<Object>,
+    // pub object_changes: Vec<ObjectChange>,
+    // pub balance_changes: Vec<BalanceChange>,
+    pub epoch: Epoch,
+    // pub checkpoint: Checkpoint
+}
+
+impl From<&SuiTransactionBlockEffects> for TransactionBlockEffects {
+    fn from(tx_effects: &SuiTransactionBlockEffects) -> Self {
+        let (status, errors) = match tx_effects.status() {
+            SuiExecutionStatus::Success => (ExecutionStatus::Success, None),
+            SuiExecutionStatus::Failure { error } => {
+                (ExecutionStatus::Failure, Some(error.clone()))
+            }
+        };
+
+        Self {
+            digest: TransactionDigest::from_array(tx_effects.transaction_digest().into_inner()),
+            gas_effects: GasEffects::from((tx_effects.gas_cost_summary(), tx_effects.gas_object())),
+            status,
+            errors,
+            epoch: Epoch {
+                epoch_id: tx_effects.executed_epoch(), // Should this be None or effects.executed_epoch, or something else entirely?
+                gas_cost_summary: Some(GasCostSummary::from(tx_effects.gas_cost_summary())),
+            },
+        }
+    }
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub(crate) enum TransactionBlockKindInput {
+    ProgrammableTx,
+    SystemTx,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub enum ExecutionStatus {
+    Success,
+    Failure,
+}
+
+#[derive(InputObject)]
+pub(crate) struct TransactionBlockFilter {
+    package: Option<SuiAddress>,
+    module: Option<String>,
+    function: Option<String>,
+
+    kind: Option<TransactionBlockKindInput>,
+    checkpoint: Option<u64>,
+
+    sign_address: Option<SuiAddress>,
+    sent_address: Option<SuiAddress>,
+    recv_address: Option<SuiAddress>,
+    paid_address: Option<SuiAddress>,
+
+    input_object: Option<SuiAddress>,
+    changed_object: Option<SuiAddress>,
+}
