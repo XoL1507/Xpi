@@ -1,0 +1,37 @@
+[package]
+name = "sui-tool"
+version = "0.12.3"
+authors = ["Mysten Labs <build@mystenlabs.com>"]
+license = "Apache-2.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+anyhow = { version = "1.0.64", features = ["backtrace"] }
+tokio = { version = "1.20.1", features = ["full"] }
+tracing = "0.1.36"
+clap = { version = "3.2.17", features = ["derive"] }
+
+telemetry-subscribers.workspace = true
+mysten-network.workspace = true
+textwrap = "0.15"
+futures = "0.3.23"
+rocksdb = "0.19.0"
+typed-store.workspace = true
+typed-store-derive.workspace = true
+tempfile = "3.3.0"
+narwhal-executor = { path = "../../narwhal/executor" }
+serde_with = { version = "1.14.0", features = ["hex"] }
+sui-storage = { path = "../sui-storage" }
+strum_macros = "^0.24"
+strum = "0.24.1"
+serde = { version = "1.0.144", features = ["derive"] }
+eyre = "0.6.8"
+
+sui-core = { path = "../sui-core" }
+sui-config = { path = "../sui-config" }
+sui-types = { path = "../sui-types" }
+sui-network = { path = "../sui-network" }
+
+colored = "2.0.0"
+workspace-hack.workspace = true
