@@ -1,0 +1,41 @@
+[package]
+name = "sui-config"
+version = "0.0.0"
+authors = ["Mysten Labs <build@mystenlabs.com>"]
+license = "Apache-2.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+bcs = "0.1.3"
+arc-swap = "1.5.1"
+camino = "1.1.1"
+anyhow = { version = "1.0.64", features = ["backtrace"] }
+serde = { version = "1.0.144", features = ["derive", "rc"] }
+serde_with = "1.14.0"
+serde_yaml = "0.8.26"
+rand = "0.8.5"
+dirs = "4.0.0"
+multiaddr = "0.14.0"
+once_cell = "1.14.0"
+tracing = "0.1.36"
+
+fastcrypto = "0.1.2"
+move-binary-format = { git = "https://github.com/move-language/move", rev = "e1e647b73dbd3652aabb2020728a4a517c26e28e" }
+move-package = { git = "https://github.com/move-language/move", rev = "e1e647b73dbd3652aabb2020728a4a517c26e28e" }
+move-core-types = { git = "https://github.com/move-language/move", rev = "e1e647b73dbd3652aabb2020728a4a517c26e28e", features = ["address20"] }
+move-vm-runtime = { git = "https://github.com/move-language/move", rev = "e1e647b73dbd3652aabb2020728a4a517c26e28e" }
+narwhal-config = { git = "https://github.com/MystenLabs/narwhal", rev = "06979c219558bda7dbcdd11ead4a7245647ca776", package = "config" }
+narwhal-crypto = { git = "https://github.com/MystenLabs/narwhal", rev = "06979c219558bda7dbcdd11ead4a7245647ca776", package = "crypto" }
+
+sui-framework = { path = "../sui-framework" }
+sui-adapter = { path = "../sui-adapter" }
+sui-simulator = { path = "../sui-simulator" }
+sui-types = { path = "../sui-types" }
+workspace-hack = { path = "../workspace-hack"}
+sha3 = "0.10.4"
+digest = "0.10.3"
+
+[dev-dependencies]
+insta = { version = "1.19.1", features = ["redactions", "yaml"] }
+tempfile = "3.3.0"
