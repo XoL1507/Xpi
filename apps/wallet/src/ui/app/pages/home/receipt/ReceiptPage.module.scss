@@ -1,0 +1,9 @@
+@use '_utils';
+@use '_values/colors';
+
+.receipt-overlay {
+    > div {
+        color: colors.$gray-90;
+        background-color: colors.$gray-40;
+    }
+}
