@@ -1,0 +1,28 @@
+[package]
+name = "sui-json-rpc-types"
+version = "0.0.0"
+authors = ["Mysten Labs <build@mystenlabs.com>"]
+license = "Apache-2.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1.57"
+anyhow = "1.0.64"
+schemars = { version = "0.8.10", features = ["either"] }
+serde = { version = "1.0.144", features = ["derive"] }
+serde_json = "1.0.83"
+serde_with = { version = "1.14.0", features = ["hex"] }
+colored = "2.0.0"
+either = "1.7.0"
+itertools = "0.10.3"
+tracing = "0.1.36"
+bcs = "0.1.3"
+
+move-binary-format = { git = "https://github.com/move-language/move", rev = "70b34a66473c34ad30d101290b249f2db3c847a2" }
+move-core-types = { git = "https://github.com/move-language/move", rev = "70b34a66473c34ad30d101290b249f2db3c847a2", features = ["address20"] }
+move-bytecode-utils = { git = "https://github.com/move-language/move", rev = "70b34a66473c34ad30d101290b249f2db3c847a2" }
+
+sui-types = { path = "../sui-types" }
+sui-json = { path = "../sui-json" }
+workspace-hack = { path = "../workspace-hack"}
