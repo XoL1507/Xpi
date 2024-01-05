@@ -1,0 +1,10 @@
+{
+	"typescript": {
+		"title": "TypeScript SDK",
+		"type": "page"
+	},
+	"wallet-kit": {
+		"title": "Wallet Kit",
+		"type": "page"
+	}
+}
