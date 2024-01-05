@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch Changesets To Operations
-        uses: peter-evans/repository-dispatch@26b39ed245ab8f31526069329e112ab2fb224588 # pin@v2
+        uses: peter-evans/repository-dispatch@bf47d102fdb849e755b0b0023ea3e81a44b6f570 # pin@v2
         with:
           repository: MystenLabs/sui-operations
           token: ${{ secrets.CHANGESETS_DEPLOY_DISPATCH }}
