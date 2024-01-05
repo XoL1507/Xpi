@@ -1,0 +1,6 @@
+packages:
+    - 'sdk/**'
+    - 'apps/**'
+    - 'dapps/**'
+    - '!**/dist/**'
+    - '!sdk/typescript/*/**'
