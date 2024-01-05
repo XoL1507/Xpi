@@ -1,0 +1,15 @@
+@use '_utils';
+@use '_values/colors';
+
+.active-section-title {
+    @include utils.typography('table/text-xs');
+
+    text-transform: uppercase;
+}
+
+.container {
+    display: flex;
+    flex-flow: column nowrap;
+    overflow-x: visible;
+    margin-bottom: 25px; // account for the extra height of the bottom nav, because of the filters
+}
