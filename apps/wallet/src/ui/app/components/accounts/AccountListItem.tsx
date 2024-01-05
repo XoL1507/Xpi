@@ -1,31 +1,22 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { type SerializedUIAccount } from '_src/background/accounts/Account';
-
-import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { AccountIcon } from './AccountIcon';
 import { AccountItem } from './AccountItem';
 import { LockUnlockButton } from './LockUnlockButton';
 import { useUnlockAccount } from './UnlockAccountContext';
+import { useActiveAccount } from '../../hooks/useActiveAccount';
+import { type SerializedUIAccount } from '_src/background/accounts/Account';
 
 type AccountListItemProps = {
 	account: SerializedUIAccount;
 	editable?: boolean;
 	showLock?: boolean;
-	hideCopy?: boolean;
-	hideExplorerLink?: boolean;
 };
 
-export function AccountListItem({
-	account,
-	editable,
-	showLock,
-	hideCopy,
-	hideExplorerLink,
-}: AccountListItemProps) {
+export function AccountListItem({ account, editable, showLock = false }: AccountListItemProps) {
 	const activeAccount = useActiveAccount();
-	const { unlockAccount, lockAccount, isPending, accountToUnlock } = useUnlockAccount();
+	const { unlockAccount, lockAccount, isLoading, accountToUnlock } = useUnlockAccount();
 
 	return (
 		<AccountItem
@@ -37,7 +28,7 @@ export function AccountListItem({
 						<div className="flex items-center justify-center">
 							<LockUnlockButton
 								isLocked={account.isLocked}
-								isLoading={isPending && accountToUnlock?.id === account.id}
+								isLoading={isLoading && accountToUnlock?.id === account.id}
 								onClick={(e) => {
 									// prevent the account from being selected when clicking the lock button
 									e.stopPropagation();
@@ -54,8 +45,6 @@ export function AccountListItem({
 			}
 			accountID={account.id}
 			editable={editable}
-			hideCopy={hideCopy}
-			hideExplorerLink={hideExplorerLink}
 		/>
 	);
 }

@@ -31,7 +31,6 @@ const VERSION: &str = const_str::concat!(env!("CARGO_PKG_VERSION"), "-", GIT_REV
     rename_all = "kebab-case",
     author,
     version = VERSION,
-    propagate_version = true,
 )]
 struct Args {
     #[clap(subcommand)]

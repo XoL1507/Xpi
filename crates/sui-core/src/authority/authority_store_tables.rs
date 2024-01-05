@@ -136,20 +136,14 @@ impl AuthorityPerpetualTables {
     pub fn open(parent_path: &Path, db_options: Option<Options>) -> Self {
         Self::open_tables_read_write(
             Self::path(parent_path),
-            MetricConf::new("perpetual")
-                .with_sampling(SamplingInterval::new(Duration::from_secs(60), 0)),
+            MetricConf::with_sampling(SamplingInterval::new(Duration::from_secs(60), 0)),
             db_options,
             None,
         )
     }
 
     pub fn open_readonly(parent_path: &Path) -> AuthorityPerpetualTablesReadOnly {
-        Self::get_read_only_handle(
-            Self::path(parent_path),
-            None,
-            None,
-            MetricConf::new("perpetual_readonly"),
-        )
+        Self::get_read_only_handle(Self::path(parent_path), None, None, MetricConf::default())
     }
 
     // This is used by indexer to find the correct version of dynamic field child object.
@@ -160,20 +154,14 @@ impl AuthorityPerpetualTables {
         object_id: ObjectID,
         version: SequenceNumber,
     ) -> Option<Object> {
-        let Ok(iter) = self
-            .objects
-            .safe_range_iter(ObjectKey::min_for_id(&object_id)..=ObjectKey::max_for_id(&object_id))
-            .skip_prior_to(&ObjectKey(object_id, version))
-        else {
-            return None;
+        let Ok(iter) = self.objects
+            .range_iter(ObjectKey::min_for_id(&object_id)..=ObjectKey::max_for_id(&object_id))
+            .skip_prior_to(&ObjectKey(object_id, version))else {
+            return None
         };
-        iter.reverse().next().and_then(|db_result| match db_result {
-            Ok((key, o)) => self.object(&key, o).ok().flatten(),
-            Err(err) => {
-                warn!("Object iterator encountered RocksDB error {:?}", err);
-                None
-            }
-        })
+        iter.reverse()
+            .next()
+            .and_then(|(key, o)| self.object(&key, o).ok().flatten())
     }
 
     fn construct_object(
@@ -198,9 +186,7 @@ impl AuthorityPerpetualTables {
         object_key: &ObjectKey,
         store_object: StoreObjectWrapper,
     ) -> Result<Option<Object>, SuiError> {
-        let StoreObject::Value(store_object) = store_object.migrate().into_inner() else {
-            return Ok(None);
-        };
+        let StoreObject::Value(store_object) = store_object.migrate().into_inner() else {return Ok(None)};
         Ok(Some(self.construct_object(object_key, store_object)?))
     }
 
@@ -470,13 +456,6 @@ impl AuthorityPerpetualTables {
             .flush()
             .map_err(SuiError::StorageError)?;
         Ok(())
-    }
-
-    pub fn get_root_state_hash(
-        &self,
-        epoch: EpochId,
-    ) -> SuiResult<Option<(CheckpointSequenceNumber, Accumulator)>> {
-        Ok(self.root_state_hash_by_epoch.get(&epoch)?)
     }
 
     pub fn insert_root_state_hash(

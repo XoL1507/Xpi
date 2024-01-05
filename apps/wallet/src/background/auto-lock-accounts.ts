@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { throttle } from 'throttle-debounce';
-
 import Alarms from './Alarms';
 import { getDB, settingsKeys } from './db';
 
@@ -40,5 +39,5 @@ export const notifyUserActive = throttle(
 	() => {
 		setupAutoLockAlarm();
 	},
-	{ noTrailing: true },
+	{ noLeading: true },
 );

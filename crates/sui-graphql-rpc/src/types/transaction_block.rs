@@ -1,143 +1,155 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
-use async_graphql::*;
-use fastcrypto::encoding::{Base58, Encoding};
-use sui_indexer::models_v2::transactions::StoredTransaction;
-use sui_types::{
-    base_types::SuiAddress as NativeSuiAddress,
-    transaction::{
-        SenderSignedData as NativeSenderSignedData, TransactionDataAPI, TransactionExpiration,
-    },
-};
 
-use crate::{context_data::db_data_provider::PgManager, error::Error};
+use crate::context_data::{
+    context_ext::DataProviderContextExt, sui_sdk_data_provider::convert_to_epoch,
+};
 
 use super::{
-    address::Address, base64::Base64, epoch::Epoch, gas::GasInput, sui_address::SuiAddress,
-    transaction_block_effects::TransactionBlockEffects,
-    transaction_block_kind::TransactionBlockKind,
+    address::Address,
+    base64::Base64,
+    digest::Digest,
+    epoch::Epoch,
+    gas::{GasEffects, GasInput},
+    sui_address::SuiAddress,
+};
+use async_graphql::*;
+use sui_json_rpc_types::{
+    SuiExecutionStatus, SuiTransactionBlockDataAPI, SuiTransactionBlockEffects,
+    SuiTransactionBlockEffectsAPI, SuiTransactionBlockResponse,
 };
 
-#[derive(Clone)]
+#[derive(SimpleObject, Clone, Eq, PartialEq)]
+#[graphql(complex)]
 pub(crate) struct TransactionBlock {
-    /// Representation of transaction data in the Indexer's Store. The indexer stores the
-    /// transaction data and its effects together, in one table.
-    pub stored: StoredTransaction,
-
-    /// Deserialized representation of `stored.raw_transaction`.
-    pub native: NativeSenderSignedData,
+    #[graphql(skip)]
+    pub digest: Digest,
+    pub effects: Option<TransactionBlockEffects>,
+    pub sender: Option<Address>,
+    pub bcs: Option<Base64>,
+    pub gas_input: Option<GasInput>,
 }
 
-#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
-pub(crate) enum TransactionBlockKindInput {
-    SystemTx = 0,
-    ProgrammableTx = 1,
+impl From<SuiTransactionBlockResponse> for TransactionBlock {
+    fn from(tx_block: sui_json_rpc_types::SuiTransactionBlockResponse) -> Self {
+        let transaction = tx_block.transaction.as_ref();
+        let sender = transaction.map(|tx| Address {
+            address: SuiAddress::from_array(tx.data.sender().to_inner()),
+        });
+        let gas_input = transaction.map(|tx| GasInput::from(tx.data.gas_data()));
+
+        Self {
+            digest: Digest::from_array(tx_block.digest.into_inner()),
+            effects: tx_block.effects.as_ref().map(TransactionBlockEffects::from),
+            sender,
+            bcs: Some(Base64::from(&tx_block.raw_transaction)),
+            gas_input,
+        }
+    }
 }
 
-#[derive(InputObject, Debug, Default, Clone)]
-pub(crate) struct TransactionBlockFilter {
-    pub package: Option<SuiAddress>,
-    pub module: Option<String>,
-    pub function: Option<String>,
-
-    pub kind: Option<TransactionBlockKindInput>,
-    pub after_checkpoint: Option<u64>,
-    pub at_checkpoint: Option<u64>,
-    pub before_checkpoint: Option<u64>,
-
-    pub sign_address: Option<SuiAddress>,
-    pub sent_address: Option<SuiAddress>,
-    pub recv_address: Option<SuiAddress>,
-    pub paid_address: Option<SuiAddress>,
-
-    pub input_object: Option<SuiAddress>,
-    pub changed_object: Option<SuiAddress>,
-
-    pub transaction_ids: Option<Vec<String>>,
-}
-
-#[Object]
+#[ComplexObject]
 impl TransactionBlock {
-    /// A 32-byte hash that uniquely identifies the transaction block contents, encoded in Base58.
-    /// This serves as a unique id for the block on chain.
     async fn digest(&self) -> String {
-        Base58::encode(&self.stored.transaction_digest)
+        self.digest.to_string()
     }
 
-    /// The address corresponding to the public key that signed this transaction. System
-    /// transactions do not have senders.
-    async fn sender(&self) -> Option<Address> {
-        let sender = self.native.transaction_data().sender();
-        (sender != NativeSuiAddress::ZERO).then(|| Address {
-            address: SuiAddress::from(sender),
-        })
-    }
-
-    /// The gas input field provides information on what objects were used as gas as well as the
-    /// owner of the gas object(s) and information on the gas price and budget.
-    ///
-    /// If the owner of the gas object(s) is not the same as the sender, the transaction block is a
-    /// sponsored transaction block.
-    async fn gas_input(&self) -> Option<GasInput> {
-        Some(GasInput::from(self.native.transaction_data().gas_data()))
-    }
-
-    /// The type of this transaction as well as the commands and/or parameters comprising the
-    /// transaction of this kind.
-    async fn kind(&self) -> Option<TransactionBlockKind> {
-        Some(TransactionBlockKind::from(
-            self.native.transaction_data().kind().clone(),
-        ))
-    }
-
-    /// A list of all signatures, Base64-encoded, from senders, and potentially the gas owner if
-    /// this is a sponsored transaction.
-    async fn signatures(&self) -> Option<Vec<Base64>> {
-        Some(
-            self.native
-                .tx_signatures()
-                .iter()
-                .map(|s| Base64::from(s.as_ref()))
-                .collect(),
-        )
-    }
-
-    /// The effects field captures the results to the chain of executing this transaction.
-    async fn effects(&self) -> Result<Option<TransactionBlockEffects>> {
-        Ok(Some(
-            TransactionBlockEffects::try_from(self.stored.clone()).extend()?,
-        ))
-    }
-
-    /// This field is set by senders of a transaction block. It is an epoch reference that sets a
-    /// deadline after which validators will no longer consider the transaction valid. By default,
-    /// there is no deadline for when a transaction must execute.
     async fn expiration(&self, ctx: &Context<'_>) -> Result<Option<Epoch>> {
-        let TransactionExpiration::Epoch(id) = self.native.transaction_data().expiration() else {
+        if self.effects.is_none() {
             return Ok(None);
+        }
+        let gcs = self.effects.as_ref().unwrap().gas_effects.gcs;
+        let data_provider = ctx.data_provider();
+        let system_state = data_provider.get_latest_sui_system_state().await?;
+        let protocol_configs = data_provider.fetch_protocol_config(None).await?;
+        let epoch = convert_to_epoch(gcs, &system_state, &protocol_configs)?;
+        Ok(Some(epoch))
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, SimpleObject)]
+#[graphql(complex)]
+pub(crate) struct TransactionBlockEffects {
+    #[graphql(skip)]
+    pub digest: Digest,
+    #[graphql(skip)]
+    pub gas_effects: GasEffects,
+    pub status: ExecutionStatus,
+    pub errors: Option<String>,
+    // pub transaction_block: TransactionBlock,
+    // pub dependencies: Vec<TransactionBlock>,
+    // pub lamport_version: Option<u64>,
+    // pub object_reads: Vec<Object>,
+    // pub object_changes: Vec<ObjectChange>,
+    // pub balance_changes: Vec<BalanceChange>,
+    // pub epoch: Epoch
+    // pub checkpoint: Checkpoint
+}
+
+impl From<&SuiTransactionBlockEffects> for TransactionBlockEffects {
+    fn from(tx_effects: &SuiTransactionBlockEffects) -> Self {
+        let (status, errors) = match tx_effects.status() {
+            SuiExecutionStatus::Success => (ExecutionStatus::Success, None),
+            SuiExecutionStatus::Failure { error } => {
+                (ExecutionStatus::Failure, Some(error.clone()))
+            }
         };
 
-        Ok(Some(
-            ctx.data_unchecked::<PgManager>()
-                .fetch_epoch_strict(*id)
-                .await
-                .extend()?,
-        ))
-    }
-
-    /// Serialized form of this transaction's `SenderSignedData`, BCS serialized and Base64 encoded.
-    async fn bcs(&self) -> Option<Base64> {
-        Some(Base64::from(&self.stored.raw_transaction))
+        Self {
+            // TODO: This is the wrong digest, effects digest is not a field on SuiTransactionBlockEffects
+            digest: Digest::from_array(tx_effects.transaction_digest().into_inner()),
+            gas_effects: GasEffects::from((tx_effects.gas_cost_summary(), tx_effects.gas_object())),
+            status,
+            errors,
+        }
     }
 }
 
-impl TryFrom<StoredTransaction> for TransactionBlock {
-    type Error = Error;
-
-    fn try_from(stored: StoredTransaction) -> Result<Self, Error> {
-        let native = bcs::from_bytes(&stored.raw_transaction)
-            .map_err(|e| Error::Internal(format!("Error deserializing transaction block: {e}")))?;
-
-        Ok(TransactionBlock { stored, native })
+#[ComplexObject]
+impl TransactionBlockEffects {
+    async fn digest(&self) -> String {
+        self.digest.to_string()
     }
+
+    async fn gas_effects(&self) -> Option<GasEffects> {
+        Some(self.gas_effects)
+    }
+
+    async fn epoch(&self, ctx: &Context<'_>) -> Result<Option<Epoch>> {
+        let data_provider = ctx.data_provider();
+        let system_state = data_provider.get_latest_sui_system_state().await?;
+        let protocol_configs = data_provider.fetch_protocol_config(None).await?;
+        let epoch = convert_to_epoch(self.gas_effects.gcs, &system_state, &protocol_configs)?;
+        Ok(Some(epoch))
+    }
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub(crate) enum TransactionBlockKindInput {
+    ProgrammableTx,
+    SystemTx,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub enum ExecutionStatus {
+    Success,
+    Failure,
+}
+
+#[derive(InputObject)]
+pub(crate) struct TransactionBlockFilter {
+    package: Option<SuiAddress>,
+    module: Option<String>,
+    function: Option<String>,
+
+    kind: Option<TransactionBlockKindInput>,
+    checkpoint: Option<u64>,
+
+    sign_address: Option<SuiAddress>,
+    sent_address: Option<SuiAddress>,
+    recv_address: Option<SuiAddress>,
+    paid_address: Option<SuiAddress>,
+
+    input_object: Option<SuiAddress>,
+    changed_object: Option<SuiAddress>,
 }

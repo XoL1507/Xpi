@@ -38,7 +38,7 @@ impl CommitteeStore {
     pub fn new(path: PathBuf, genesis_committee: &Committee, db_options: Option<Options>) -> Self {
         let tables = CommitteeStoreTables::open_tables_read_write(
             path,
-            MetricConf::new("committee"),
+            MetricConf::default(),
             db_options,
             None,
         );

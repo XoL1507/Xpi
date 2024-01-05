@@ -9,18 +9,21 @@ import { AddressLink, ObjectLink } from '~/ui/InternalLink';
 import { CollapsibleSection } from '~/ui/collapsible/CollapsibleSection';
 
 const REGEX_NUMBER = /^\d+$/;
+const DEFAULT_ITEMS_TO_SHOW = 10;
 
 interface InputsCardProps {
 	inputs: SuiCallArg[];
 }
 
 export function InputsCard({ inputs }: InputsCardProps) {
+	const defaultOpen = inputs.length < DEFAULT_ITEMS_TO_SHOW;
+
 	if (!inputs?.length) {
 		return null;
 	}
 
 	const expandableItems = inputs.map((input, index) => (
-		<CollapsibleSection key={index} title={`Input ${index}`} defaultOpen>
+		<CollapsibleSection key={index} title={`Input ${index}`} defaultOpen={defaultOpen}>
 			<div data-testid="inputs-card-content" className="flex flex-col gap-2">
 				{Object.entries(input).map(([key, value]) => {
 					let renderValue;
@@ -68,6 +71,8 @@ export function InputsCard({ inputs }: InputsCardProps) {
 			items={expandableItems}
 			itemsLabel={inputs.length > 1 ? 'Inputs' : 'Input'}
 			count={inputs.length}
+			defaultItemsToShow={DEFAULT_ITEMS_TO_SHOW}
+			noExpandableList={defaultOpen}
 		/>
 	);
 }

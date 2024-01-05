@@ -16,7 +16,6 @@ use tracing::{debug, info, instrument};
 
 use mysten_metrics::spawn_monitored_task;
 use sui_core::authority::AuthorityState;
-use sui_json_rpc_api::{cap_page_limit, CoinReadApiOpenRpc, CoinReadApiServer, JsonRpcMetrics};
 use sui_json_rpc_types::Balance;
 use sui_json_rpc_types::{CoinPage, SuiCoinMetadata};
 use sui_open_rpc::Module;
@@ -25,23 +24,24 @@ use sui_types::balance::Supply;
 use sui_types::base_types::{ObjectID, SuiAddress};
 use sui_types::coin::{CoinMetadata, TreasuryCap};
 use sui_types::effects::TransactionEffectsAPI;
-use sui_types::gas_coin::{GAS, TOTAL_SUPPLY_MIST};
+use sui_types::gas_coin::GAS;
 use sui_types::object::Object;
 use sui_types::parse_sui_struct_tag;
 
 #[cfg(test)]
 use mockall::automock;
 
+use crate::api::{cap_page_limit, CoinReadApiServer, JsonRpcMetrics};
 use crate::authority_state::StateRead;
 use crate::error::{Error, RpcInterimResult, SuiRpcInputError};
 use crate::{with_tracing, SuiRpcModule};
 
-pub fn parse_to_struct_tag(coin_type: &str) -> Result<StructTag, SuiRpcInputError> {
+fn parse_to_struct_tag(coin_type: &str) -> Result<StructTag, SuiRpcInputError> {
     parse_sui_struct_tag(coin_type)
         .map_err(|e| SuiRpcInputError::CannotParseSuiStructTag(format!("{e}")))
 }
 
-pub fn parse_to_type_tag(coin_type: Option<String>) -> Result<TypeTag, SuiRpcInputError> {
+fn parse_to_type_tag(coin_type: Option<String>) -> Result<TypeTag, SuiRpcInputError> {
     Ok(TypeTag::Struct(Box::new(match coin_type {
         Some(c) => parse_to_struct_tag(&c)?,
         None => GAS::type_(),
@@ -75,7 +75,7 @@ impl SuiRpcModule for CoinReadApi {
     }
 
     fn rpc_doc_module() -> Module {
-        CoinReadApiOpenRpc::module_doc()
+        crate::api::CoinReadApiOpenRpc::module_doc()
     }
 }
 
@@ -219,9 +219,7 @@ impl CoinReadApiServer for CoinReadApi {
         with_tracing!(async move {
             let coin_struct = parse_to_struct_tag(&coin_type)?;
             Ok(if GAS::is_gas(&coin_struct) {
-                Supply {
-                    value: TOTAL_SUPPLY_MIST,
-                }
+                Supply { value: 0 }
             } else {
                 let treasury_cap_object = self
                     .internal
@@ -425,7 +423,7 @@ mod tests {
     use sui_types::object::Object;
     use sui_types::utils::create_fake_transaction;
     use sui_types::{parse_sui_struct_tag, TypeTag};
-    use typed_store_error::TypedStoreError;
+    use typed_store::TypedStoreError;
 
     mock! {
         pub KeyValueStore {}
@@ -450,13 +448,6 @@ mod tests {
                 &self,
                 digest: TransactionDigest,
             ) -> SuiResult<Option<CheckpointSequenceNumber>>;
-
-            async fn get_object(&self, object_id: ObjectID, version: SequenceNumber) -> SuiResult<Option<Object>>;
-
-            async fn multi_get_transaction_checkpoint(
-                &self,
-                digests: &[TransactionDigest],
-            ) -> SuiResult<Vec<Option<CheckpointSequenceNumber>>>;
         }
     }
 
@@ -1298,7 +1289,7 @@ mod tests {
             let response = coin_read_api.get_total_supply(coin_type.to_string()).await;
 
             let supply = response.unwrap();
-            let expected = expect!["10000000000000000000"];
+            let expected = expect!["0"];
             expected.assert_eq(&supply.value.to_string());
         }
 

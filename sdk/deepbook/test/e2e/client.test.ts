@@ -1,19 +1,19 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 
-import { DeepBookClient } from '../../src';
-import { PoolSummary } from '../../src/types';
 import {
-	DEFAULT_LOT_SIZE,
-	DEFAULT_TICK_SIZE,
-	executeTransactionBlock,
-	setupDeepbookAccount,
-	setupPool,
-	setupSuiClient,
 	TestToolbox,
+	setupSuiClient,
+	setupPool,
+	setupDeepbookAccount,
+	executeTransactionBlock,
+	DEFAULT_TICK_SIZE,
+	DEFAULT_LOT_SIZE,
 } from './setup';
+import { PoolSummary } from '../../src/types';
+import { DeepBookClient } from '../../src';
 
 const DEPOSIT_AMOUNT = 100n;
 const LIMIT_ORDER_PRICE = 1n;
@@ -143,13 +143,7 @@ describe('Interacting with the pool', () => {
 			).totalBalance,
 		);
 
-		const txb = await deepbook.placeMarketOrder(
-			accountCapId2,
-			pool.poolId,
-			LIMIT_ORDER_QUANTITY,
-			'ask',
-			baseCoin,
-		);
+		const txb = await deepbook.placeMarketOrder(pool.poolId, LIMIT_ORDER_QUANTITY, 'ask', baseCoin);
 		await executeTransactionBlock(toolbox, txb);
 
 		// the limit order should be cleared out after matching with the market order
@@ -186,27 +180,5 @@ describe('Interacting with the pool', () => {
 
 		const openOrdersAfter = await deepbook.listOpenOrders(pool.poolId);
 		expect(openOrdersAfter.length).toBe(0);
-	});
-
-	it('Test parsing sui coin id', async () => {
-		const deepbook = new DeepBookClient(toolbox.client, accountCapId);
-		const resp = await toolbox.client.getCoins({
-			owner: toolbox.keypair.getPublicKey().toSuiAddress(),
-			coinType: pool.baseAsset,
-		});
-		const baseCoin = resp.data[0].coinObjectId;
-		const type = await deepbook.getCoinType(baseCoin);
-		expect(type).toBe(resp.data[0].coinType);
-	});
-
-	it('Test parsing complex coin id', async () => {
-		const deepbook = new DeepBookClient(toolbox.client, accountCapId);
-		const resp = await toolbox.client.getCoins({
-			owner: toolbox.address(),
-			coinType: pool.baseAsset,
-		});
-		const baseCoin = resp.data[0].coinObjectId;
-		const type = await deepbook.getCoinType(baseCoin);
-		expect(type).toBe(resp.data[0].coinType);
 	});
 });

@@ -9,26 +9,12 @@ use chrono::{
     ParseError as ChronoParseError,
 };
 
-use crate::error::Error;
-
-/// The DateTime in UTC format. The milliseconds part is optional,
-/// and it will be omitted if the ms value is zero.
+// ISO-8601 Date and Time: RFC3339 in UTC
+// YYYY-MM-DDTHH:MM:SS.mmmZ
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct DateTime(ChronoDateTime<ChronoUtc>);
 
-impl DateTime {
-    pub fn from_ms(timestamp_ms: i64) -> Result<Self, Error> {
-        ChronoUtc
-            .timestamp_millis_opt(timestamp_ms)
-            .single()
-            .ok_or_else(|| Error::Internal("Cannot convert timestamp into DateTime".to_string()))
-            .map(Self)
-    }
-}
-
-/// The DateTime in UTC format. The milliseconds part is optional,
-/// and it will be omitted if the ms value is zero.
-#[Scalar(use_type_description = true)]
+#[Scalar]
 impl ScalarType for DateTime {
     fn parse(value: Value) -> InputValueResult<Self> {
         match value {
@@ -44,9 +30,12 @@ impl ScalarType for DateTime {
     }
 }
 
-impl Description for DateTime {
-    fn description() -> &'static str {
-        "ISO-8601 Date and Time: RFC3339 in UTC with format: YYYY-MM-DDTHH:MM:SS.mmmZ. Note that the milliseconds part is optional, and it may be omitted if its value is 0."
+impl DateTime {
+    pub fn from_ms(timestamp_ms: i64) -> Option<Self> {
+        ChronoUtc
+            .timestamp_millis_opt(timestamp_ms)
+            .single()
+            .map(Self)
     }
 }
 

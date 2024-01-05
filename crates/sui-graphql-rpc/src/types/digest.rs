@@ -1,19 +1,18 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::error::Error;
 use async_graphql::*;
 use fastcrypto::encoding::{Base58, Encoding};
 use std::fmt;
 
-pub(crate) const BASE58_DIGEST_LENGTH: usize = 32;
+const BASE58_DIGEST_LENGTH: usize = 32;
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Copy)]
 pub(crate) struct Digest([u8; BASE58_DIGEST_LENGTH]);
 
 impl Digest {
-    pub fn into_vec(self) -> Vec<u8> {
-        self.0.to_vec()
+    pub fn into_array(self) -> [u8; BASE58_DIGEST_LENGTH] {
+        self.0
     }
 
     pub fn from_array(arr: [u8; BASE58_DIGEST_LENGTH]) -> Self {
@@ -21,41 +20,14 @@ impl Digest {
     }
 }
 
-impl TryFrom<Vec<u8>> for Digest {
-    type Error = Error;
-
-    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        let bytes: [u8; BASE58_DIGEST_LENGTH] = <[u8; BASE58_DIGEST_LENGTH]>::try_from(&bytes[..])
-            .map_err(|_| Error::InvalidDigestLength {
-                expected: BASE58_DIGEST_LENGTH,
-                actual: bytes.len(),
-            })?;
-
-        Ok(Self::from_array(bytes))
-    }
-}
-
-impl TryFrom<&[u8]> for Digest {
-    type Error = Error;
-
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let bytes: [u8; BASE58_DIGEST_LENGTH] = <[u8; BASE58_DIGEST_LENGTH]>::try_from(bytes)
-            .map_err(|_| Error::InvalidDigestLength {
-                expected: BASE58_DIGEST_LENGTH,
-                actual: bytes.len(),
-            })?;
-
-        Ok(Self::from_array(bytes))
-    }
-}
-
 impl std::str::FromStr for Digest {
-    type Err = Error;
+    type Err = InputValueError<String>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut result = [0u8; BASE58_DIGEST_LENGTH];
-        result
-            .copy_from_slice(&Base58::decode(s).map_err(|r| Error::InvalidBase58(format!("{r}")))?);
+        result.copy_from_slice(
+            &Base58::decode(s).map_err(|r| InputValueError::custom(format!("{r}")))?,
+        );
         Ok(Digest(result))
     }
 }

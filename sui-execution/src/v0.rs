@@ -17,7 +17,7 @@ use sui_types::{
     gas::SuiGasStatus,
     inner_temporary_store::InnerTemporaryStore,
     metrics::{BytecodeVerifierMetrics, LimitsMetrics},
-    transaction::{CheckedInputObjects, ProgrammableTransaction, TransactionKind},
+    transaction::{InputObjects, ProgrammableTransaction, TransactionKind},
     type_resolver::LayoutResolver,
 };
 
@@ -47,10 +47,15 @@ pub(crate) struct Verifier<'m> {
 }
 
 impl Executor {
-    pub(crate) fn new(protocol_config: &ProtocolConfig, silent: bool) -> Result<Self, SuiError> {
+    pub(crate) fn new(
+        protocol_config: &ProtocolConfig,
+        paranoid_type_checks: bool,
+        silent: bool,
+    ) -> Result<Self, SuiError> {
         Ok(Executor(Arc::new(new_move_vm(
             all_natives(silent),
             protocol_config,
+            paranoid_type_checks,
         )?)))
     }
 }
@@ -81,7 +86,7 @@ impl executor::Executor for Executor {
         certificate_deny_set: &HashSet<TransactionDigest>,
         epoch_id: &EpochId,
         epoch_timestamp_ms: u64,
-        input_objects: CheckedInputObjects,
+        input_objects: InputObjects,
         gas_coins: Vec<ObjectRef>,
         gas_status: SuiGasStatus,
         transaction_kind: TransactionKind,
@@ -119,7 +124,7 @@ impl executor::Executor for Executor {
         certificate_deny_set: &HashSet<TransactionDigest>,
         epoch_id: &EpochId,
         epoch_timestamp_ms: u64,
-        input_objects: CheckedInputObjects,
+        input_objects: InputObjects,
         gas_coins: Vec<ObjectRef>,
         gas_status: SuiGasStatus,
         transaction_kind: TransactionKind,
@@ -154,7 +159,7 @@ impl executor::Executor for Executor {
         protocol_config: &ProtocolConfig,
         metrics: Arc<LimitsMetrics>,
         tx_context: &mut TxContext,
-        input_objects: CheckedInputObjects,
+        input_objects: InputObjects,
         pt: ProgrammableTransaction,
     ) -> Result<InnerTemporaryStore, ExecutionError> {
         execute_genesis_state_update(

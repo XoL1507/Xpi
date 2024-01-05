@@ -2,6 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // import { Transaction } from '@mysten/sui.js';
+import { useTransactionSummary } from '@mysten/core';
+import { TransactionBlock } from '@mysten/sui.js/transactions';
+import { useMemo, useState } from 'react';
+
+import { GasFees } from './GasFees';
+import { TransactionDetails } from './TransactionDetails';
+import { ConfirmationModal } from '../../../shared/ConfirmationModal';
 import { UserApproveContainer } from '_components/user-approve-container';
 import { useAppDispatch, useTransactionData, useTransactionDryRun } from '_hooks';
 import { type TransactionApprovalRequest } from '_payloads/transactions/ApprovalRequest';
@@ -13,13 +20,6 @@ import { useRecognizedPackages } from '_src/ui/app/hooks/useRecognizedPackages';
 import { useSigner } from '_src/ui/app/hooks/useSigner';
 import { PageMainLayoutTitle } from '_src/ui/app/shared/page-main-layout/PageMainLayoutTitle';
 import { TransactionSummary } from '_src/ui/app/shared/transaction-summary';
-import { useTransactionSummary } from '@mysten/core';
-import { TransactionBlock } from '@mysten/sui.js/transactions';
-import { useMemo, useState } from 'react';
-
-import { ConfirmationModal } from '../../../shared/ConfirmationModal';
-import { GasFees } from './GasFees';
-import { TransactionDetails } from './TransactionDetails';
 
 export type TransactionRequestProps = {
 	txRequest: TransactionApprovalRequest;
@@ -43,13 +43,13 @@ export function TransactionRequest({ txRequest }: TransactionRequestProps) {
 		}
 		return tx;
 	}, [txRequest.tx.data, addressForTransaction]);
-	const { isPending, isError } = useTransactionData(addressForTransaction, transaction);
+	const { isLoading, isError } = useTransactionData(addressForTransaction, transaction);
 	const [isConfirmationVisible, setConfirmationVisible] = useState(false);
 
 	const {
 		data,
 		isError: isDryRunError,
-		isPending: isDryRunLoading,
+		isLoading: isDryRunLoading,
 	} = useTransactionDryRun(addressForTransaction, transaction);
 	const recognizedPackagesList = useRecognizedPackages();
 
@@ -70,7 +70,7 @@ export function TransactionRequest({ txRequest }: TransactionRequestProps) {
 				approveTitle="Approve"
 				rejectTitle="Reject"
 				onSubmit={async (approved: boolean) => {
-					if (isPending) return;
+					if (isLoading) return;
 					if (approved && isError) {
 						setConfirmationVisible(true);
 						return;
@@ -92,7 +92,7 @@ export function TransactionRequest({ txRequest }: TransactionRequestProps) {
 					}
 				}}
 				address={addressForTransaction}
-				approveLoading={isPending || isConfirmationVisible}
+				approveLoading={isLoading || isConfirmationVisible}
 				checkAccountLock
 			>
 				<PageMainLayoutTitle title="Approve Transaction" />

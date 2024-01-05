@@ -2,15 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Text, type TextProps } from '@mysten/ui';
-import clsx from 'clsx';
 import { type ReactNode } from 'react';
 
 interface DescriptionProps {
-	title: ReactNode;
+	title: string;
 	children: ReactNode;
 	titleVariant?: TextProps['variant'];
 	titleColor?: TextProps['color'];
-	alignItems?: 'start' | 'center';
 }
 
 export function Description({
@@ -18,16 +16,9 @@ export function Description({
 	children,
 	titleVariant = 'pBodySmall/medium',
 	titleColor = 'steel-dark',
-	alignItems = 'start',
 }: DescriptionProps) {
 	return (
-		<div
-			className={clsx(
-				'flex justify-between gap-10',
-				alignItems === 'center' && 'items-center',
-				alignItems === 'start' && 'items-start',
-			)}
-		>
+		<div className="flex items-start justify-between gap-10">
 			<Text variant={titleVariant} color={titleColor}>
 				{title}
 			</Text>

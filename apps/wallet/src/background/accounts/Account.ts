@@ -1,15 +1,14 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { type Serializable } from '_src/shared/cryptography/keystore';
 import {
-	toSerializedSignature,
-	type ExportedKeypair,
-	type Keypair,
 	type SerializedSignature,
+	toSerializedSignature,
+	type Keypair,
+	type ExportedKeypair,
 } from '@mysten/sui.js/cryptography';
 import { blake2b } from '@noble/hashes/blake2b';
-
+import { accountsEvents } from './events';
 import { setupAutoLockAlarm } from '../auto-lock-accounts';
 import { getDB } from '../db';
 import {
@@ -17,9 +16,9 @@ import {
 	getEphemeralValue,
 	setEphemeralValue,
 } from '../session-ephemeral-values';
-import { accountsEvents } from './events';
+import { type Serializable } from '_src/shared/cryptography/keystore';
 
-export type AccountType = 'mnemonic-derived' | 'imported' | 'ledger' | 'qredo' | 'zkLogin';
+export type AccountType = 'mnemonic-derived' | 'imported' | 'ledger' | 'qredo' | 'zk';
 
 export abstract class Account<
 	T extends SerializedAccount = SerializedAccount,
@@ -80,7 +79,7 @@ export abstract class Account<
 		return toSerializedSignature({
 			signature,
 			signatureScheme,
-			publicKey: pubkey,
+			pubKey: pubkey,
 		});
 	}
 
@@ -161,7 +160,7 @@ export interface SerializedUIAccount {
 
 export interface PasswordUnlockableAccount {
 	readonly unlockType: 'password';
-	passwordUnlock(password?: string): Promise<void>;
+	passwordUnlock(password: string): Promise<void>;
 	verifyPassword(password: string): Promise<void>;
 }
 

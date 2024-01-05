@@ -13,7 +13,7 @@ import { trimStdLibPrefix } from '../../../utils/stringUtils';
 import { type DataType } from '../ObjectResultType';
 import TransactionBlocksForAddress, {
 	FILTER_VALUES,
-} from '~/components/TransactionBlocksForAddress';
+} from '~/components/TransactionBlocksForAddress/TransactionBlocksForAddress';
 import { AddressLink, ObjectLink } from '~/ui/InternalLink';
 import { TabHeader, Tabs, TabsContent, TabsList, TabsTrigger } from '~/ui/Tabs';
 
@@ -31,9 +31,9 @@ function PkgView({ data }: { data: DataType }) {
 		splitPanelsOrientation[1].value,
 	);
 
-	const { data: txnData, isPending } = useGetTransaction(data.data.tx_digest!);
+	const { data: txnData, isLoading } = useGetTransaction(data.data.tx_digest!);
 
-	if (isPending) {
+	if (isLoading) {
 		return <LoadingIndicator text="Loading data" />;
 	}
 	const viewedData = {
@@ -116,7 +116,7 @@ function PkgView({ data }: { data: DataType }) {
 						<TransactionBlocksForAddress
 							address={viewedData.id}
 							filter={FILTER_VALUES.INPUT}
-							header="Transaction Blocks"
+							isObject
 						/>
 					</ErrorBoundary>
 				</div>

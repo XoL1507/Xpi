@@ -1,26 +1,31 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { type SuiTransactionBlockResponse } from '@mysten/sui.js/client';
+import Browser from 'webextension-polyfill';
+
+import { Connection } from './Connection';
+import NetworkEnv from '../NetworkEnv';
+import { Window } from '../Window';
+import { getAccountsStatusData } from '../accounts';
+import { requestUserApproval } from '../qredo';
 import { createMessage } from '_messages';
-import type { Message } from '_messages';
-import type { PortChannelName } from '_messaging/PortChannelName';
-import { isBasePayload, type ErrorPayload } from '_payloads';
+import { type ErrorPayload, isBasePayload } from '_payloads';
 import { isGetAccount } from '_payloads/account/GetAccount';
-import type { GetAccountResponse } from '_payloads/account/GetAccountResponse';
-import type { SetNetworkPayload } from '_payloads/network';
 import {
 	isAcquirePermissionsRequest,
 	isHasPermissionRequest,
-	type AcquirePermissionsResponse,
-	type HasPermissionsResponse,
-	type Permission,
 	type PermissionType,
+	type HasPermissionsResponse,
+	type AcquirePermissionsResponse,
+	type Permission,
 } from '_payloads/permissions';
 import {
 	isExecuteTransactionRequest,
 	isSignTransactionRequest,
-	type ExecuteTransactionResponse,
+	isStakeRequest,
 	type SignTransactionResponse,
+	type ExecuteTransactionResponse,
 } from '_payloads/transactions';
 import Permissions from '_src/background/Permissions';
 import Transactions from '_src/background/Transactions';
@@ -30,14 +35,13 @@ import {
 	isSignMessageRequest,
 	type SignMessageRequest,
 } from '_src/shared/messaging/messages/payloads/transactions/SignMessage';
-import { type SignedTransaction } from '_src/ui/app/WalletSigner';
-import { type SuiTransactionBlockResponse } from '@mysten/sui.js/client';
-import type { Runtime } from 'webextension-polyfill';
 
-import { getAccountsStatusData } from '../accounts';
-import NetworkEnv from '../NetworkEnv';
-import { requestUserApproval } from '../qredo';
-import { Connection } from './Connection';
+import { type SignedTransaction } from '_src/ui/app/WalletSigner';
+import type { Message } from '_messages';
+import type { PortChannelName } from '_messaging/PortChannelName';
+import type { GetAccountResponse } from '_payloads/account/GetAccountResponse';
+import type { SetNetworkPayload } from '_payloads/network';
+import type { Runtime } from 'webextension-polyfill';
 
 export class ContentScriptConnection extends Connection {
 	public static readonly CHANNEL: PortChannelName = 'sui_content<->background';
@@ -121,6 +125,12 @@ export class ContentScriptConnection extends Connection {
 						msg.id,
 					),
 				);
+			} else if (isStakeRequest(payload)) {
+				const window = new Window(
+					Browser.runtime.getURL('ui.html') +
+						`#/stake/new?address=${encodeURIComponent(payload.validatorAddress)}`,
+				);
+				await window.show();
 			} else if (isBasePayload(payload) && payload.type === 'get-network') {
 				this.send(
 					createMessage<SetNetworkPayload>(

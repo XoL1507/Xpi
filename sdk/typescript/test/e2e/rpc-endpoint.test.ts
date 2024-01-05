@@ -1,10 +1,9 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { beforeAll, describe, expect, it } from 'vitest';
-
-import { SuiGasData } from '../../src/client';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { setup, TestToolbox } from './utils/setup';
+import { SuiGasData } from '../../src/client';
 
 describe('Invoke any RPC endpoint', () => {
 	let toolbox: TestToolbox;

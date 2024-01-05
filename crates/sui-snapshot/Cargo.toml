@@ -10,7 +10,6 @@ authors = ["Mysten Labs <build@mystenlabs.com>"]
 
 [dependencies]
 integer-encoding.workspace = true
-indicatif.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 bcs.workspace = true
@@ -28,8 +27,7 @@ sui-storage.workspace = true
 sui-protocol-config.workspace = true
 fastcrypto = { workspace = true, features = ["copy_key"] }
 tokio = { workspace = true, features = ["full"] }
-workspace-hack.workspace = true
-serde_json.workspace = true
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
 tempfile.workspace = true

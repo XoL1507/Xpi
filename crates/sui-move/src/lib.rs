@@ -5,8 +5,9 @@ use clap::Parser;
 #[cfg(feature = "unit_test")]
 use move_cli::base::test::UnitTestResult;
 use move_package::BuildConfig;
+#[cfg(feature = "unit_test")]
+use move_unit_test::UnitTestingConfig;
 use std::path::PathBuf;
-use sui_move_build::set_sui_flavor;
 
 #[cfg(feature = "build")]
 pub mod build;
@@ -44,12 +45,9 @@ pub struct Calib {
 
 pub fn execute_move_command(
     package_path: Option<PathBuf>,
-    mut build_config: BuildConfig,
+    #[allow(unused_variables)] build_config: BuildConfig,
     command: Command,
 ) -> anyhow::Result<()> {
-    if let Some(err_msg) = set_sui_flavor(&mut build_config) {
-        anyhow::bail!(err_msg);
-    }
     match command {
         #[cfg(feature = "build")]
         Command::Build(c) => c.execute(package_path, build_config),
@@ -62,7 +60,19 @@ pub fn execute_move_command(
         Command::Prove(c) => c.execute(package_path, build_config),
         #[cfg(feature = "unit_test")]
         Command::Test(c) => {
-            let result = c.execute(package_path, build_config)?;
+            let unit_test_config = UnitTestingConfig {
+                gas_limit: c.test.gas_limit,
+                filter: c.test.filter.clone(),
+                list: c.test.list,
+                num_threads: c.test.num_threads,
+                report_statistics: c.test.report_statistics.clone(),
+                report_storage_on_error: c.test.report_storage_on_error,
+                check_stackless_vm: c.test.check_stackless_vm,
+                verbose: c.test.verbose_mode,
+                ignore_compile_warnings: c.test.ignore_compile_warnings,
+                ..UnitTestingConfig::default_with_bound(None)
+            };
+            let result = c.execute(package_path, build_config, unit_test_config)?;
 
             // Return a non-zero exit code if any test failed
             if let UnitTestResult::Failure = result {

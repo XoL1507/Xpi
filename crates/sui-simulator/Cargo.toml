@@ -7,6 +7,7 @@ publish = false
 edition = "2021"
 
 [dependencies]
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
 move-package.workspace = true
 
 sui-framework.workspace = true
@@ -22,7 +23,6 @@ telemetry-subscribers.workspace = true
 tower.workspace = true
 lru.workspace = true
 rand.workspace = true
-workspace-hack.workspace = true
 
 [target.'cfg(msim)'.dependencies]
 msim.workspace = true

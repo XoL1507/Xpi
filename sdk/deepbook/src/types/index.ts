@@ -1,7 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { EventId } from '@mysten/sui.js/client';
+import { EventId } from '@mysten/sui.js/src/client';
 
 export * from './bcs';
 

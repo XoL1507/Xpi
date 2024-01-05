@@ -3,16 +3,17 @@
 
 use crate::{
     error::{ExecutionError, SuiError},
-    object::MoveObject,
+    object::{MoveObject, ObjectFormatOptions},
 };
-use move_core_types::{annotated_value as A, language_storage::TypeTag};
+use move_core_types::{language_storage::TypeTag, value::MoveStructLayout};
 use move_vm_types::loaded_data::runtime_types::Type;
 
 pub trait LayoutResolver {
-    fn get_annotated_layout(
+    fn get_layout(
         &mut self,
         object: &MoveObject,
-    ) -> Result<A::MoveStructLayout, SuiError>;
+        format: ObjectFormatOptions,
+    ) -> Result<MoveStructLayout, SuiError>;
 }
 
 pub trait TypeTagResolver {

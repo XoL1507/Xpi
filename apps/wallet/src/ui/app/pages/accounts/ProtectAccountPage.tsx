@@ -1,8 +1,6 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { Text } from '_app/shared/text';
-import { isMnemonicSerializedUiAccount } from '_src/background/accounts/MnemonicAccount';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
@@ -13,8 +11,10 @@ import Loading from '../../components/loading';
 import { useAccounts } from '../../hooks/useAccounts';
 import { autoLockDataToMinutes } from '../../hooks/useAutoLockMinutes';
 import { useAutoLockMinutesMutation } from '../../hooks/useAutoLockMinutesMutation';
-import { useCreateAccountsMutation, type CreateType } from '../../hooks/useCreateAccountMutation';
+import { type CreateType, useCreateAccountsMutation } from '../../hooks/useCreateAccountMutation';
 import { Heading } from '../../shared/heading';
+import { Text } from '_app/shared/text';
+import { isMnemonicSerializedUiAccount } from '_src/background/accounts/MnemonicAccount';
 
 const allowedAccountTypes: CreateType[] = [
 	'new-mnemonic',
@@ -46,11 +46,11 @@ export function ProtectAccountPage() {
 	useEffect(() => {
 		if (
 			typeof hasPasswordAccounts !== 'undefined' &&
-			!(createMutation.isSuccess || createMutation.isPending)
+			!(createMutation.isSuccess || createMutation.isLoading)
 		) {
 			setShowVerifyPasswordView(hasPasswordAccounts);
 		}
-	}, [hasPasswordAccounts, createMutation.isSuccess, createMutation.isPending]);
+	}, [hasPasswordAccounts, createMutation.isSuccess, createMutation.isLoading]);
 	const createAccountCallback = useCallback(
 		async (password: string, type: CreateType) => {
 			try {

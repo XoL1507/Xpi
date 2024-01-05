@@ -12,14 +12,11 @@ use sui_types::crypto::AggregateAuthoritySignature;
 use sui_types::digests::TransactionDigest;
 use sui_types::dynamic_field::DynamicFieldInfo;
 use sui_types::effects::TransactionEffects;
-use sui_types::event::SystemEpochInfoEvent;
-use sui_types::messages_checkpoint::{
-    CertifiedCheckpointSummary, CheckpointCommitment, CheckpointDigest, EndOfEpochData,
-};
+use sui_types::messages_checkpoint::{CheckpointCommitment, CheckpointDigest, EndOfEpochData};
 use sui_types::move_package::MovePackage;
 use sui_types::object::{Object, Owner};
 use sui_types::sui_serde::SuiStructTag;
-use sui_types::sui_system_state::sui_system_state_summary::SuiSystemStateSummary;
+use sui_types::sui_system_state::sui_system_state_summary::SuiValidatorSummary;
 use sui_types::transaction::SenderSignedData;
 
 pub type IndexerResult<T> = Result<T, IndexerError>;
@@ -42,7 +39,6 @@ pub struct IndexedCheckpoint {
     pub validator_signature: AggregateAuthoritySignature,
     pub successful_tx_num: usize,
     pub end_of_epoch_data: Option<EndOfEpochData>,
-    pub end_of_epoch: bool,
 }
 
 impl IndexedCheckpoint {
@@ -63,7 +59,6 @@ impl IndexedCheckpoint {
             tx_digests,
             previous_checkpoint_digest: checkpoint.previous_digest,
             end_of_epoch_data: checkpoint.end_of_epoch_data.clone(),
-            end_of_epoch: checkpoint.end_of_epoch_data.clone().is_some(),
             total_gas_cost,
             computation_cost: checkpoint.epoch_rolling_gas_cost_summary.computation_cost,
             storage_cost: checkpoint.epoch_rolling_gas_cost_summary.storage_cost,
@@ -80,87 +75,29 @@ impl IndexedCheckpoint {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug)]
 pub struct IndexedEpochInfo {
     pub epoch: u64,
+    pub validators: Vec<SuiValidatorSummary>,
+    pub epoch_total_transactions: u64,
     pub first_checkpoint_id: u64,
     pub epoch_start_timestamp: u64,
     pub reference_gas_price: u64,
     pub protocol_version: u64,
-    pub total_stake: u64,
-    pub storage_fund_balance: u64,
-    pub system_state: Vec<u8>,
-    pub epoch_total_transactions: Option<u64>,
     pub last_checkpoint_id: Option<u64>,
     pub epoch_end_timestamp: Option<u64>,
     pub storage_fund_reinvestment: Option<u64>,
     pub storage_charge: Option<u64>,
     pub storage_rebate: Option<u64>,
+    pub storage_fund_balance: Option<u64>,
     pub stake_subsidy_amount: Option<u64>,
     pub total_gas_fees: Option<u64>,
     pub total_stake_rewards_distributed: Option<u64>,
     pub leftover_storage_fund_inflow: Option<u64>,
+    pub new_total_stake: Option<u64>,
     pub epoch_commitments: Option<Vec<CheckpointCommitment>>,
-}
-
-impl IndexedEpochInfo {
-    pub fn from_new_system_state_summary(
-        new_system_state_summary: SuiSystemStateSummary,
-        first_checkpoint_id: u64,
-        event: Option<&SystemEpochInfoEvent>,
-    ) -> IndexedEpochInfo {
-        Self {
-            epoch: new_system_state_summary.epoch,
-            first_checkpoint_id,
-            epoch_start_timestamp: new_system_state_summary.epoch_start_timestamp_ms,
-            reference_gas_price: new_system_state_summary.reference_gas_price,
-            protocol_version: new_system_state_summary.protocol_version,
-            // NOTE: total_stake and storage_fund_balance are about new epoch,
-            // although the event is generated at the end of the previous epoch,
-            // the event is optional b/c no such event for the first epoch.
-            total_stake: event.map(|e| e.total_stake).unwrap_or(0),
-            storage_fund_balance: event.map(|e| e.storage_fund_balance).unwrap_or(0),
-            system_state: bcs::to_bytes(&new_system_state_summary).unwrap(),
-            ..Default::default()
-        }
-    }
-
-    pub fn from_end_of_epoch_data(
-        system_state_summary: &SuiSystemStateSummary,
-        last_checkpoint_summary: &CertifiedCheckpointSummary,
-        event: &SystemEpochInfoEvent,
-        network_total_tx_num_at_last_epoch_end: u64,
-    ) -> IndexedEpochInfo {
-        Self {
-            epoch: last_checkpoint_summary.epoch,
-            epoch_total_transactions: Some(
-                last_checkpoint_summary.network_total_transactions
-                    - network_total_tx_num_at_last_epoch_end,
-            ),
-            last_checkpoint_id: Some(*last_checkpoint_summary.sequence_number()),
-            epoch_end_timestamp: Some(last_checkpoint_summary.timestamp_ms),
-            storage_fund_reinvestment: Some(event.storage_fund_reinvestment),
-            storage_charge: Some(event.storage_charge),
-            storage_rebate: Some(event.storage_rebate),
-            leftover_storage_fund_inflow: Some(event.leftover_storage_fund_inflow),
-            stake_subsidy_amount: Some(event.stake_subsidy_amount),
-            total_gas_fees: Some(event.total_gas_fees),
-            total_stake_rewards_distributed: Some(event.total_stake_rewards_distributed),
-            epoch_commitments: last_checkpoint_summary
-                .end_of_epoch_data
-                .as_ref()
-                .map(|e| e.epoch_commitments.clone()),
-            system_state: bcs::to_bytes(system_state_summary).unwrap(),
-            // The following felds will not and shall not be upserted
-            // into DB. We have them below to make compiler and diesel happy
-            first_checkpoint_id: 0,
-            epoch_start_timestamp: 0,
-            reference_gas_price: 0,
-            protocol_version: 0,
-            total_stake: 0,
-            storage_fund_balance: 0,
-        }
-    }
+    pub next_epoch_reference_gas_price: Option<u64>,
+    pub next_epoch_protocol_version: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -194,7 +131,7 @@ impl IndexedEvent {
             senders: vec![event.sender],
             package: event.package_id,
             module: event.transaction_module.to_string(),
-            event_type: event.type_.to_canonical_string(/* with_prefix */ true),
+            event_type: event.type_.to_string(),
             bcs: event.contents.clone(),
             timestamp_ms,
         }
@@ -207,29 +144,6 @@ pub enum OwnerType {
     Address = 1,
     Object = 2,
     Shared = 3,
-}
-
-pub enum ObjectStatus {
-    Active = 0,
-    WrappedOrDeleted = 1,
-}
-
-impl TryFrom<i16> for OwnerType {
-    type Error = IndexerError;
-
-    fn try_from(value: i16) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0 => OwnerType::Immutable,
-            1 => OwnerType::Address,
-            2 => OwnerType::Object,
-            3 => OwnerType::Shared,
-            value => {
-                return Err(IndexerError::PersistentStorageDataCorruptionError(format!(
-                    "{value} as OwnerType"
-                )))
-            }
-        })
-    }
 }
 
 // Returns owner_type, owner_address
@@ -248,7 +162,7 @@ pub enum DynamicFieldKind {
     DynamicObject = 1,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct IndexedObject {
     pub object_id: ObjectID,
     pub object_version: u64,
@@ -269,9 +183,7 @@ impl IndexedObject {
         df_info: Option<DynamicFieldInfo>,
     ) -> Self {
         let (owner_type, owner_id) = owner_to_owner_info(&object.owner);
-        let coin_type = object
-            .coin_type_maybe()
-            .map(|t| t.to_canonical_string(/* with_prefix */ true));
+        let coin_type = object.coin_type_maybe().map(|t| t.to_string());
         let coin_balance = if coin_type.is_some() {
             Some(object.get_coin_value_unsafe())
         } else {
@@ -293,18 +205,10 @@ impl IndexedObject {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct IndexedDeletedObject {
-    pub object_id: ObjectID,
-    pub object_version: u64,
-    pub checkpoint_sequence_number: u64,
-}
-
 #[derive(Debug)]
 pub struct IndexedPackage {
     pub package_id: ObjectID,
     pub move_package: MovePackage,
-    pub checkpoint_sequence_number: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -335,7 +239,6 @@ pub struct TxIndex {
     pub checkpoint_sequence_number: u64,
     pub input_objects: Vec<ObjectID>,
     pub changed_objects: Vec<ObjectID>,
-    pub payers: Vec<SuiAddress>,
     pub senders: Vec<SuiAddress>,
     pub recipients: Vec<SuiAddress>,
     pub move_calls: Vec<(ObjectID, String, String)>,

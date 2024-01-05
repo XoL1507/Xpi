@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-
 import { autoLockMinutesQueryKey } from './useAutoLockMinutes';
 import { useBackgroundClient } from './useBackgroundClient';
 

@@ -7,7 +7,6 @@ use crate::{
     error::ExecutionError,
     execution::{RawValueType, Value},
     transaction::Argument,
-    transfer::Receiving,
     type_resolver::TypeTagResolver,
 };
 
@@ -155,7 +154,6 @@ impl ExecutionMode for System {
     type ExecutionResults = ();
 
     fn allow_arbitrary_function_calls() -> bool {
-        // allows bypassing visibility for system calls
         true
     }
 
@@ -279,10 +277,6 @@ fn value_to_bytes_and_tag(
             let tag = resolver.get_type_tag(ty)?;
             (tag, bytes.clone())
         }
-        Value::Receiving(id, seqno, _) => (
-            Receiving::type_tag(),
-            Receiving::new(*id, *seqno).to_bcs_bytes(),
-        ),
     };
     Ok((bytes, type_tag))
 }

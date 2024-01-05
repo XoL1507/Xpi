@@ -3,31 +3,29 @@
 
 use std::{
     cmp::max,
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
-    time::{Duration, Instant},
 };
 
-use indexmap::IndexMap;
 use lru::LruCache;
 use mysten_metrics::monitored_scope;
 use parking_lot::RwLock;
-use sui_types::{base_types::TransactionDigest, error::SuiResult, fp_ensure};
+use sui_types::executable_transaction::VerifiedExecutableTransaction;
+use sui_types::{base_types::TransactionDigest, error::SuiResult};
 use sui_types::{
     base_types::{ObjectID, SequenceNumber},
     committee::EpochId,
     digests::TransactionEffectsDigest,
-    error::SuiError,
-    storage::InputKey,
     transaction::{TransactionDataAPI, VerifiedCertificate},
 };
-use sui_types::{executable_transaction::VerifiedExecutableTransaction, fp_bail};
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{error, info, instrument, trace, warn};
+use tracing::{error, trace, warn};
 
-use crate::authority::authority_per_epoch_store::AuthorityPerEpochStore;
+use crate::authority::{
+    authority_per_epoch_store::AuthorityPerEpochStore,
+    authority_store::{InputKey, LockMode},
+};
 use crate::authority::{AuthorityMetrics, AuthorityStore};
-use sui_types::transaction::SenderSignedData;
 use tap::TapOptional;
 
 #[cfg(test)]
@@ -36,14 +34,6 @@ mod transaction_manager_tests;
 
 /// Minimum capacity of HashMaps used in TransactionManager.
 const MIN_HASHMAP_CAPACITY: usize = 1000;
-
-// Reject a transaction if transaction manager queue length is above this threshold.
-// 100_000 = 10k TPS * 5s resident time in transaction manager (pending + executing) * 2.
-pub(crate) const MAX_TM_QUEUE_LENGTH: usize = 100_000;
-
-// Reject a transaction if the number of pending transactions depending on the object
-// is above the threshold.
-pub(crate) const MAX_PER_OBJECT_QUEUE_LENGTH: usize = 200;
 
 /// TransactionManager is responsible for managing object dependencies of pending transactions,
 /// and publishing a stream of certified transactions (certificates) ready to execute.
@@ -69,8 +59,41 @@ struct PendingCertificate {
     // When executing from checkpoint, the certified effects digest is provided, so that forks can
     // be detected prior to committing the transaction.
     expected_effects_digest: Option<TransactionEffectsDigest>,
-    // The input object this certifiate is waiting for to become available in order to be executed.
-    waiting_input_objects: BTreeSet<InputKey>,
+    // Input object locks that have not been acquired, because:
+    // 1. The object has not been created yet.
+    // 2. The object exists, but this transaction is trying to acquire a r/w lock while the object
+    // is held in ro locks by other transaction(s).
+    acquiring_locks: BTreeMap<InputKey, LockMode>,
+    // Input object locks that have been acquired.
+    acquired_locks: BTreeMap<InputKey, LockMode>,
+}
+
+/// LockQueue is a queue of transactions waiting or holding a lock on an object.
+#[derive(Debug, Default)]
+struct LockQueue {
+    // Transactions waiting for read-only lock.
+    readonly_waiters: BTreeSet<TransactionDigest>,
+    // Transactions holding read-only lock that have not finished executions.
+    readonly_holders: BTreeSet<TransactionDigest>,
+    // Transactions waiting for default lock.
+    // Only after there is no more transaction wait or holding read-only locks,
+    // can a transaction acquire the default lock.
+    // Note that except for immutable objects, a given key may only have one TransactionDigest in
+    // the set. Unfortunately we cannot easily verify that this invariant is upheld, because you
+    // cannot determine from TransactionData whether an input is mutable or immutable.
+    default_waiters: BTreeSet<TransactionDigest>,
+}
+
+impl LockQueue {
+    fn has_readonly(&self) -> bool {
+        !(self.readonly_waiters.is_empty() && self.readonly_holders.is_empty())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.readonly_waiters.is_empty()
+            && self.readonly_holders.is_empty()
+            && self.default_waiters.is_empty()
+    }
 }
 
 struct CacheInner {
@@ -117,15 +140,15 @@ impl CacheInner {
     }
 
     fn insert(&mut self, object: &InputKey) {
-        if let Some(version) = object.version() {
+        if let Some(version) = object.1 {
             if let Some((previous_id, previous_version)) =
-                self.versioned_cache.push(object.id(), version)
+                self.versioned_cache.push(object.0, version)
             {
-                if previous_id == object.id() && previous_version > version {
+                if previous_id == object.0 && previous_version > version {
                     // do not allow highest known version to decrease
                     // This should not be possible unless bugs are introduced elsewhere in this
                     // module.
-                    self.versioned_cache.put(object.id(), previous_version);
+                    self.versioned_cache.put(object.0, previous_version);
                 } else {
                     self.metrics
                         .transaction_manager_object_cache_evictions
@@ -135,11 +158,11 @@ impl CacheInner {
             self.metrics
                 .transaction_manager_object_cache_size
                 .set(self.versioned_cache.len() as i64);
-        } else if let Some((previous_id, _)) = self.unversioned_cache.push(object.id(), ()) {
+        } else if let Some((previous_id, _)) = self.unversioned_cache.push(object.0, ()) {
             // lru_cache will does not check if the value being evicted is the same as the value
             // being inserted, so we do need to check if the id is different before counting this
             // as an eviction.
-            if previous_id != object.id() {
+            if previous_id != object.0 {
                 self.metrics
                     .transaction_manager_package_cache_evictions
                     .inc();
@@ -153,8 +176,8 @@ impl CacheInner {
     // Returns Some(true/false) for a definitive result. Returns None if the caller must defer to
     // the db.
     fn is_object_available(&mut self, object: &InputKey) -> Option<bool> {
-        if let Some(version) = object.version() {
-            if let Some(current) = self.versioned_cache.get(&object.id()) {
+        if let Some(version) = object.1 {
+            if let Some(current) = self.versioned_cache.get(&object.0) {
                 self.metrics.transaction_manager_object_cache_hits.inc();
                 Some(*current >= version)
             } else {
@@ -163,7 +186,7 @@ impl CacheInner {
             }
         } else {
             self.unversioned_cache
-                .get(&object.id())
+                .get(&object.0)
                 .tap_some(|_| self.metrics.transaction_manager_package_cache_hits.inc())
                 .tap_none(|| self.metrics.transaction_manager_package_cache_misses.inc())
                 .map(|_| true)
@@ -213,13 +236,13 @@ struct Inner {
     // Current epoch of TransactionManager.
     epoch: EpochId,
 
-    // Maps missing input objects to transactions in pending_certificates.
-    missing_inputs: HashMap<InputKey, BTreeSet<TransactionDigest>>,
+    // Maps input objects to transactions waiting for locks on the object.
+    lock_waiters: HashMap<InputKey, LockQueue>,
 
-    // Stores age info for all transactions depending on each object.
+    // Number of transactions that depend on each object ID. Should match exactly with total
+    // number of transactions per object ID prefix in the missing_inputs table.
     // Used for throttling signing and submitting transactions depending on hot objects.
-    // An `IndexMap` is used to ensure that the insertion order is preserved.
-    input_objects: HashMap<ObjectID, IndexMap<TransactionDigest, Instant>>,
+    input_objects: HashMap<ObjectID, usize>,
 
     // Maps object IDs to the highest observed sequence number of the object. When the value is
     // None, indicates that the object is immutable, corresponding to an InputKey with no sequence
@@ -231,31 +254,29 @@ struct Inner {
 
     // Maps transaction digests to their content and missing input objects.
     pending_certificates: HashMap<TransactionDigest, PendingCertificate>,
-
-    // Transactions that have all input objects available, but have not finished execution.
-    executing_certificates: HashSet<TransactionDigest>,
+    // Maps executing transaction digests to their acquired input object locks.
+    executing_certificates: HashMap<TransactionDigest, BTreeMap<InputKey, LockMode>>,
 }
 
 impl Inner {
     fn new(epoch: EpochId, metrics: Arc<AuthorityMetrics>) -> Inner {
         Inner {
             epoch,
-            missing_inputs: HashMap::with_capacity(MIN_HASHMAP_CAPACITY),
+            lock_waiters: HashMap::with_capacity(MIN_HASHMAP_CAPACITY),
             input_objects: HashMap::with_capacity(MIN_HASHMAP_CAPACITY),
             available_objects_cache: AvailableObjectsCache::new(metrics),
             pending_certificates: HashMap::with_capacity(MIN_HASHMAP_CAPACITY),
-            executing_certificates: HashSet::with_capacity(MIN_HASHMAP_CAPACITY),
+            executing_certificates: HashMap::with_capacity(MIN_HASHMAP_CAPACITY),
         }
     }
 
-    // Checks if there is any transaction waiting on `input_key`. Returns all the pending
-    // transactions that are ready to be executed.
+    // Checks if there is any transaction waiting on the lock of input_key, and try to
+    // update transactions that can acquire the lock.
     // Must ensure input_key is available in storage before calling this function.
-    fn find_ready_transactions(
+    fn try_acquire_lock(
         &mut self,
         input_key: InputKey,
         update_cache: bool,
-        metrics: &Arc<AuthorityMetrics>,
     ) -> Vec<PendingCertificate> {
         if update_cache {
             self.available_objects_cache.insert(&input_key);
@@ -263,45 +284,54 @@ impl Inner {
 
         let mut ready_certificates = Vec::new();
 
-        let Some(digests) = self.missing_inputs.remove(&input_key) else {
+        let Some(lock_queue) = self.lock_waiters.get_mut(&input_key) else {
             // No transaction is waiting on the object yet.
             return ready_certificates;
         };
 
-        let input_txns = self
-            .input_objects
-            .get_mut(&input_key.id())
-            .unwrap_or_else(|| {
-                panic!(
-                    "# of transactions waiting on object {:?} cannot be 0",
-                    input_key.id()
-                )
-            });
-        for digest in digests.iter() {
-            let age_opt = input_txns.shift_remove(digest);
-            // The digest of the transaction must be inside the map.
-            assert!(age_opt.is_some());
-            metrics
-                .transaction_manager_transaction_queue_age_s
-                .observe(age_opt.unwrap().elapsed().as_secs_f64());
+        // Waiters can acquire lock in either readonly or default mode.
+        let mut digests = BTreeSet::new();
+        if !lock_queue.readonly_waiters.is_empty() {
+            std::mem::swap(&mut digests, &mut lock_queue.readonly_waiters);
+            lock_queue.readonly_holders.extend(digests.iter().cloned());
+        } else if lock_queue.readonly_holders.is_empty() {
+            // Only try to acquire default lock if there is no readonly lock waiter / holder.
+            std::mem::swap(&mut digests, &mut lock_queue.default_waiters);
+        };
+        if lock_queue.is_empty() {
+            self.lock_waiters.remove(&input_key);
+        }
+        if digests.is_empty() {
+            return ready_certificates;
         }
 
-        if input_txns.is_empty() {
-            self.input_objects.remove(&input_key.id());
+        let input_count = self.input_objects.get_mut(&input_key.0).unwrap_or_else(|| {
+            panic!(
+                "# of transactions waiting on object {:?} cannot be 0",
+                input_key.0
+            )
+        });
+        *input_count -= digests.len();
+        if *input_count == 0 {
+            self.input_objects.remove(&input_key.0);
         }
 
         for digest in digests {
             // Pending certificate must exist.
             let pending_cert = self.pending_certificates.get_mut(&digest).unwrap();
-            assert!(pending_cert.waiting_input_objects.remove(&input_key));
-            // When a certificate has all its input objects, it is ready to execute.
-            if pending_cert.waiting_input_objects.is_empty() {
+            let lock_mode = pending_cert.acquiring_locks.remove(&input_key).unwrap();
+            assert!(pending_cert
+                .acquired_locks
+                .insert(input_key, lock_mode)
+                .is_none());
+            // When a certificate has all locks acquired, it is ready to execute.
+            if pending_cert.acquiring_locks.is_empty() {
                 let pending_cert = self.pending_certificates.remove(&digest).unwrap();
                 ready_certificates.push(pending_cert);
             } else {
                 // TODO: we should start logging this at a higher level after some period of
                 // time has elapsed.
-                trace!(tx_digest = ?digest,missing = ?pending_cert.waiting_input_objects, "Certificate waiting on missing inputs");
+                trace!(tx_digest = ?digest,acquiring = ?pending_cert.acquiring_locks, "Certificate acquiring locks");
             }
         }
 
@@ -309,7 +339,7 @@ impl Inner {
     }
 
     fn maybe_reserve_capacity(&mut self) {
-        self.missing_inputs.maybe_reserve_capacity();
+        self.lock_waiters.maybe_reserve_capacity();
         self.input_objects.maybe_reserve_capacity();
         self.pending_certificates.maybe_reserve_capacity();
         self.executing_certificates.maybe_reserve_capacity();
@@ -317,7 +347,7 @@ impl Inner {
 
     /// After reaching 1/4 load in hashmaps, decrease capacity to increase load to 1/2.
     fn maybe_shrink_capacity(&mut self) {
-        self.missing_inputs.maybe_shrink_capacity();
+        self.lock_waiters.maybe_shrink_capacity();
         self.input_objects.maybe_shrink_capacity();
         self.pending_certificates.maybe_shrink_capacity();
         self.executing_certificates.maybe_shrink_capacity();
@@ -355,7 +385,6 @@ impl TransactionManager {
     ///
     /// REQUIRED: Shared object locks must be taken before calling enqueueing transactions
     /// with shared objects!
-    #[instrument(level = "trace", skip_all)]
     pub(crate) fn enqueue_certificates(
         &self,
         certs: Vec<VerifiedCertificate>,
@@ -368,7 +397,6 @@ impl TransactionManager {
         self.enqueue(executable_txns, epoch_store)
     }
 
-    #[instrument(level = "trace", skip_all)]
     pub(crate) fn enqueue(
         &self,
         certs: Vec<VerifiedExecutableTransaction>,
@@ -378,7 +406,6 @@ impl TransactionManager {
         self.enqueue_impl(certs, epoch_store)
     }
 
-    #[instrument(level = "trace", skip_all)]
     pub(crate) fn enqueue_with_expected_effects_digest(
         &self,
         certs: Vec<(VerifiedExecutableTransaction, TransactionEffectsDigest)>,
@@ -424,7 +451,6 @@ impl TransactionManager {
             .collect();
 
         let mut object_availability: HashMap<InputKey, Option<bool>> = HashMap::new();
-        let mut receiving_objects: HashSet<InputKey> = HashSet::new();
         let certs: Vec<_> = certs
             .into_iter()
             .map(|(cert, fx_digest)| {
@@ -435,32 +461,18 @@ impl TransactionManager {
                     .value
                     .input_objects()
                     .expect("input_objects() cannot fail");
-                let mut input_object_keys = self.authority_store.get_input_object_keys(
+                let input_object_locks = self.authority_store.get_input_object_locks(
                     &digest,
                     &input_object_kinds,
                     epoch_store,
                 );
-
-                if input_object_kinds.len() != input_object_keys.len() {
+                if input_object_kinds.len() != input_object_locks.len() {
                     error!("Duplicated input objects: {:?}", input_object_kinds);
                 }
-
-                let receiving_object_entries =
-                    cert.data().intent_message().value.receiving_objects();
-                for entry in receiving_object_entries {
-                    let key = InputKey::VersionedObject {
-                        id: entry.0,
-                        version: entry.1,
-                    };
-                    receiving_objects.insert(key);
-                    input_object_keys.insert(key);
-                }
-
-                for key in input_object_keys.iter() {
+                for key in input_object_locks.keys() {
                     object_availability.insert(*key, None);
                 }
-
-                (cert, fx_digest, input_object_keys)
+                (cert, fx_digest, input_object_locks)
             })
             .collect();
 
@@ -482,17 +494,13 @@ impl TransactionManager {
 
         // Checking object availability without holding TM lock to reduce contention.
         // But input objects can become available before TM lock is acquired.
-        // So missing objects' availability are checked again after acquiring TM lock.
-        let cache_miss_availability = self
+        // So missing objects' availability are checked again after releasing the TM lock.
+        let cache_miss_availibility = self
             .authority_store
-            .multi_input_objects_available(
-                input_object_cache_misses.iter().cloned(),
-                receiving_objects,
-                epoch_store,
-            )
+            .multi_input_objects_exist(input_object_cache_misses.iter().cloned())
             .expect("Checking object existence cannot fail!")
             .into_iter()
-            .zip(input_object_cache_misses);
+            .zip(input_object_cache_misses.into_iter());
 
         // After this point, the function cannot return early and must run to the end. Otherwise,
         // it can lead to data inconsistencies and potentially some transactions will never get
@@ -500,11 +508,10 @@ impl TransactionManager {
 
         // Internal lock is held only for updating the internal state.
         let mut inner = self.inner.write();
-
         let _scope = monitored_scope("TransactionManager::enqueue::wlock");
 
-        for (available, key) in cache_miss_availability {
-            if available && key.version().is_none() {
+        for (available, key) in cache_miss_availibility {
+            if available && key.1.is_none() {
                 // Mutable objects obtained from cache_miss_availability usually will not be read
                 // again, so we do not want to evict other objects in order to insert them into the
                 // cache. However, packages will likely be read often, so we do want to insert them
@@ -517,7 +524,7 @@ impl TransactionManager {
         }
 
         // Now recheck the cache for anything that became available (via notify_commit) since we
-        // read cache_miss_availability - because the cache is unbounded mode it is guaranteed to
+        // read cache_miss_availibility - because the cache is unbounded mode it is guaranteed to
         // contain all notifications that arrived since we released the lock on self.inner.
         for (key, value) in object_availability.iter_mut() {
             if !value.expect("all objects must have been checked by now") {
@@ -531,11 +538,12 @@ impl TransactionManager {
 
         let mut pending = Vec::new();
 
-        for (cert, expected_effects_digest, input_object_keys) in certs {
+        for (cert, expected_effects_digest, input_object_locks) in certs {
             pending.push(PendingCertificate {
                 certificate: cert,
                 expected_effects_digest,
-                waiting_input_objects: input_object_keys,
+                acquiring_locks: input_object_locks,
+                acquired_locks: BTreeMap::new(),
             });
         }
 
@@ -566,7 +574,7 @@ impl TransactionManager {
                 continue;
             }
             // skip already executing txes
-            if inner.executing_certificates.contains(&digest) {
+            if inner.executing_certificates.contains_key(&digest) {
                 self.metrics
                     .transaction_manager_num_enqueued_certificates
                     .with_label_values(&["already_executing"])
@@ -584,29 +592,58 @@ impl TransactionManager {
                 continue;
             }
 
-            let mut waiting_input_objects = BTreeSet::new();
-            std::mem::swap(
-                &mut waiting_input_objects,
-                &mut pending_cert.waiting_input_objects,
-            );
-            for key in waiting_input_objects {
+            let mut acquiring_locks = BTreeMap::new();
+            std::mem::swap(&mut acquiring_locks, &mut pending_cert.acquiring_locks);
+            for (key, lock_mode) in acquiring_locks {
+                // The transaction needs to wait to acquire locks in two cases:
+                let mut acquire = false;
                 if !object_availability[&key].unwrap() {
-                    // The input object is not yet available.
-                    pending_cert.waiting_input_objects.insert(key);
-
-                    assert!(
-                        inner.missing_inputs.entry(key).or_default().insert(digest),
-                        "Duplicated certificate {:?} for missing object {:?}",
-                        digest,
-                        key
-                    );
-                    let input_txns = inner.input_objects.entry(key.id()).or_default();
-                    input_txns.insert(digest, Instant::now());
+                    // 1. The input object is not yet available.
+                    acquire = true;
+                    let lock_queue = inner.lock_waiters.entry(key).or_default();
+                    match lock_mode {
+                        LockMode::Default => {
+                            // If the transaction is acquiring the object in Default mode, it must
+                            // wait for all ReadOnly locks to be released.
+                            assert!(lock_queue.default_waiters.insert(digest));
+                        }
+                        LockMode::ReadOnly => {
+                            assert!(lock_queue.readonly_waiters.insert(digest));
+                        }
+                    }
+                } else {
+                    match lock_mode {
+                        LockMode::Default => {
+                            // 2. The input object is currently locked in ReadOnly mode, and this
+                            // transaction is acquiring it in Default mode.
+                            if let Some(lock_queue) = inner.lock_waiters.get_mut(&key) {
+                                // If there are any ReadOnly locks, the transaction must wait for
+                                // them to be released.
+                                if lock_queue.has_readonly() {
+                                    acquire = true;
+                                    assert!(lock_queue.default_waiters.insert(digest));
+                                }
+                            }
+                        }
+                        LockMode::ReadOnly => {
+                            // Acquired readonly locks need to be tracked until the transaction has
+                            // finished execution.
+                            let lock_queue = inner.lock_waiters.entry(key).or_default();
+                            assert!(lock_queue.readonly_holders.insert(digest));
+                        }
+                    }
+                }
+                if acquire {
+                    pending_cert.acquiring_locks.insert(key, lock_mode);
+                    let input_count = inner.input_objects.entry(key.0).or_default();
+                    *input_count += 1;
+                } else {
+                    pending_cert.acquired_locks.insert(key, lock_mode);
                 }
             }
 
             // Ready transactions can start to execute.
-            if pending_cert.waiting_input_objects.is_empty() {
+            if pending_cert.acquiring_locks.is_empty() {
                 self.metrics
                     .transaction_manager_num_enqueued_certificates
                     .with_label_values(&["ready"])
@@ -633,7 +670,7 @@ impl TransactionManager {
 
         self.metrics
             .transaction_manager_num_missing_objects
-            .set(inner.missing_inputs.len() as i64);
+            .set(inner.lock_waiters.len() as i64);
         self.metrics
             .transaction_manager_num_pending_certificates
             .set(inner.pending_certificates.len() as i64);
@@ -641,6 +678,20 @@ impl TransactionManager {
         inner.maybe_reserve_capacity();
 
         Ok(())
+    }
+
+    /// Notifies TransactionManager that the given objects are available in the objects table.
+    /// Useful when transactions associated with the objects are not known, e.g. after checking
+    /// object availability from storage, or for testing.
+    pub(crate) fn _fastpath_objects_available(
+        &self,
+        input_keys: Vec<InputKey>,
+        epoch_store: &AuthorityPerEpochStore,
+    ) {
+        let mut inner = self.inner.write();
+        let _scope = monitored_scope("TransactionManager::objects_available::wlock");
+        self.objects_available_locked(&mut inner, epoch_store, input_keys, false);
+        inner.maybe_shrink_capacity();
     }
 
     #[cfg(test)]
@@ -675,15 +726,14 @@ impl TransactionManager {
 
         for input_key in input_keys {
             trace!(?input_key, "object available");
-            for ready_cert in inner.find_ready_transactions(input_key, update_cache, &self.metrics)
-            {
+            for ready_cert in inner.try_acquire_lock(input_key, update_cache) {
                 self.certificate_ready(inner, ready_cert);
             }
         }
 
         self.metrics
             .transaction_manager_num_missing_objects
-            .set(inner.missing_inputs.len() as i64);
+            .set(inner.lock_waiters.len() as i64);
         self.metrics
             .transaction_manager_num_pending_certificates
             .set(inner.pending_certificates.len() as i64);
@@ -693,7 +743,6 @@ impl TransactionManager {
     }
 
     /// Notifies TransactionManager about a transaction that has been committed.
-    #[instrument(level = "trace", skip_all)]
     pub(crate) fn notify_commit(
         &self,
         digest: &TransactionDigest,
@@ -711,11 +760,26 @@ impl TransactionManager {
 
             self.objects_available_locked(&mut inner, epoch_store, output_object_keys, true);
 
-            if !inner.executing_certificates.remove(digest) {
+            let Some(acquired_locks) = inner.executing_certificates.remove(digest) else {
                 trace!("{:?} not found in executing certificates, likely because it is a system transaction", digest);
                 return;
+            };
+            for (key, lock_mode) in acquired_locks {
+                if lock_mode == LockMode::Default {
+                    // Holders of default locks are not tracked.
+                    continue;
+                }
+                assert_eq!(lock_mode, LockMode::ReadOnly);
+                let lock_queue = inner.lock_waiters.get_mut(&key).unwrap();
+                assert!(
+                    lock_queue.readonly_holders.remove(digest),
+                    "Certificate {:?} not found among readonly lock holders",
+                    digest
+                );
+                for ready_cert in inner.try_acquire_lock(key, true) {
+                    self.certificate_ready(&mut inner, ready_cert);
+                }
             }
-
             self.metrics
                 .transaction_manager_num_executing_certificates
                 .set(inner.executing_certificates.len() as i64);
@@ -731,9 +795,20 @@ impl TransactionManager {
         let cert = pending_certificate.certificate;
         let expected_effects_digest = pending_certificate.expected_effects_digest;
         trace!(tx_digest = ?cert.digest(), "certificate ready");
-        assert_eq!(pending_certificate.waiting_input_objects.len(), 0);
         // Record as an executing certificate.
-        assert!(inner.executing_certificates.insert(*cert.digest()));
+        assert_eq!(
+            pending_certificate.acquired_locks.len(),
+            cert.data()
+                .intent_message()
+                .value
+                .input_objects()
+                .unwrap()
+                .len()
+        );
+        assert!(inner
+            .executing_certificates
+            .insert(*cert.digest(), pending_certificate.acquired_locks)
+            .is_none());
         let _ = self
             .tx_ready_certificates
             .send((cert, expected_effects_digest));
@@ -747,23 +822,17 @@ impl TransactionManager {
         inner
             .pending_certificates
             .get(digest)
-            .map(|cert| cert.waiting_input_objects.clone().into_iter().collect())
+            .map(|cert| cert.acquiring_locks.keys().cloned().collect())
     }
 
-    // Returns the number of transactions waiting on each object ID, as well as the age of the oldest transaction in the queue.
-    pub(crate) fn objects_queue_len_and_age(
-        &self,
-        keys: Vec<ObjectID>,
-    ) -> Vec<(ObjectID, usize, Option<Duration>)> {
+    // Returns the number of transactions waiting on each object ID.
+    pub(crate) fn objects_queue_len(&self, keys: Vec<ObjectID>) -> Vec<(ObjectID, usize)> {
         let inner = self.inner.read();
         keys.into_iter()
             .map(|key| {
-                let default_map = IndexMap::new();
-                let txns = inner.input_objects.get(&key).unwrap_or(&default_map);
                 (
                     key,
-                    txns.len(),
-                    txns.first().map(|(_, time)| time.elapsed()),
+                    inner.input_objects.get(&key).cloned().unwrap_or_default(),
                 )
             })
             .collect()
@@ -782,64 +851,14 @@ impl TransactionManager {
         *inner = Inner::new(new_epoch, self.metrics.clone());
     }
 
-    pub(crate) fn check_execution_overload(
-        &self,
-        txn_age_threshold: Duration,
-        tx_data: &SenderSignedData,
-    ) -> SuiResult {
-        // Too many transactions are pending execution.
-        let inflight_queue_len = self.inflight_queue_len();
-        fp_ensure!(
-            inflight_queue_len < MAX_TM_QUEUE_LENGTH,
-            SuiError::TooManyTransactionsPendingExecution {
-                queue_len: inflight_queue_len,
-                threshold: MAX_TM_QUEUE_LENGTH,
-            }
-        );
-
-        for (object_id, queue_len, txn_age) in self.objects_queue_len_and_age(
-            tx_data
-                .transaction_data()
-                .input_objects()?
-                .into_iter()
-                .map(|r| r.object_id())
-                .collect(),
-        ) {
-            // When this occurs, most likely transactions piled up on a shared object.
-            if queue_len >= MAX_PER_OBJECT_QUEUE_LENGTH {
-                info!(
-                    "Overload detected on object {:?} with {} pending transactions",
-                    object_id, queue_len
-                );
-                fp_bail!(SuiError::TooManyTransactionsPendingOnObject {
-                    object_id,
-                    queue_len,
-                    threshold: MAX_PER_OBJECT_QUEUE_LENGTH,
-                });
-            }
-            if let Some(age) = txn_age {
-                // Check that we don't have a txn that has been waiting for a long time in the queue.
-                if age >= txn_age_threshold {
-                    info!("Overload detected on object {:?} with oldest transaction pending for {} secs", object_id, age.as_secs());
-                    fp_bail!(SuiError::TooOldTransactionPendingOnObject {
-                        object_id,
-                        txn_age_sec: age.as_secs(),
-                        threshold: txn_age_threshold.as_secs(),
-                    });
-                }
-            }
-        }
-        Ok(())
-    }
-
     // Verify TM has no pending item for tests.
     #[cfg(test)]
     fn check_empty_for_testing(&self) {
         let inner = self.inner.read();
         assert!(
-            inner.missing_inputs.is_empty(),
-            "Missing inputs: {:?}",
-            inner.missing_inputs
+            inner.lock_waiters.is_empty(),
+            "Lock waiters: {:?}",
+            inner.lock_waiters
         );
         assert!(
             inner.input_objects.is_empty(),
@@ -883,30 +902,6 @@ where
     }
 }
 
-trait ResizableHashSet<K> {
-    fn maybe_reserve_capacity(&mut self);
-    fn maybe_shrink_capacity(&mut self);
-}
-
-impl<K> ResizableHashSet<K> for HashSet<K>
-where
-    K: std::cmp::Eq + std::hash::Hash,
-{
-    /// After reaching 3/4 load in hashset, increase capacity to decrease load to 1/2.
-    fn maybe_reserve_capacity(&mut self) {
-        if self.len() > self.capacity() * 3 / 4 {
-            self.reserve(self.capacity() / 2);
-        }
-    }
-
-    /// After reaching 1/4 load in hashset, decrease capacity to increase load to 1/2.
-    fn maybe_shrink_capacity(&mut self) {
-        if self.len() > MIN_HASHMAP_CAPACITY && self.len() < self.capacity() / 4 {
-            self.shrink_to(max(self.capacity() / 2, MIN_HASHMAP_CAPACITY))
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -920,7 +915,7 @@ mod test {
         // insert 10 unique unversioned objects
         for i in 0..10 {
             let object = ObjectID::new([i; 32]);
-            let input_key = InputKey::Package { id: object };
+            let input_key = InputKey(object, None);
             assert_eq!(cache.is_object_available(&input_key), None);
             cache.insert(&input_key);
             assert_eq!(cache.is_object_available(&input_key), Some(true));
@@ -929,17 +924,14 @@ mod test {
         // first 5 have been evicted
         for i in 0..5 {
             let object = ObjectID::new([i; 32]);
-            let input_key = InputKey::Package { id: object };
+            let input_key = InputKey(object, None);
             assert_eq!(cache.is_object_available(&input_key), None);
         }
 
         // insert 10 unique versioned objects
         for i in 0..10 {
             let object = ObjectID::new([i; 32]);
-            let input_key = InputKey::VersionedObject {
-                id: object,
-                version: (i as u64).into(),
-            };
+            let input_key = InputKey(object, Some((i as u64).into()));
             assert_eq!(cache.is_object_available(&input_key), None);
             cache.insert(&input_key);
             assert_eq!(cache.is_object_available(&input_key), Some(true));
@@ -948,38 +940,26 @@ mod test {
         // first 5 versioned objects have been evicted
         for i in 0..5 {
             let object = ObjectID::new([i; 32]);
-            let input_key = InputKey::VersionedObject {
-                id: object,
-                version: (i as u64).into(),
-            };
+            let input_key = InputKey(object, Some((i as u64).into()));
             assert_eq!(cache.is_object_available(&input_key), None);
         }
 
         // but versioned objects do not cause evictions of unversioned objects
         for i in 5..10 {
             let object = ObjectID::new([i; 32]);
-            let input_key = InputKey::Package { id: object };
+            let input_key = InputKey(object, None);
             assert_eq!(cache.is_object_available(&input_key), Some(true));
         }
 
         // object 9 is available at version 9
         let object = ObjectID::new([9; 32]);
-        let input_key = InputKey::VersionedObject {
-            id: object,
-            version: 9.into(),
-        };
+        let input_key = InputKey(object, Some(9.into()));
         assert_eq!(cache.is_object_available(&input_key), Some(true));
         // but not at version 10
-        let input_key = InputKey::VersionedObject {
-            id: object,
-            version: 10.into(),
-        };
+        let input_key = InputKey(object, Some(10.into()));
         assert_eq!(cache.is_object_available(&input_key), Some(false));
         // it is available at version 8 (this case can be used by readonly shared objects)
-        let input_key = InputKey::VersionedObject {
-            id: object,
-            version: 8.into(),
-        };
+        let input_key = InputKey(object, Some(8.into()));
         assert_eq!(cache.is_object_available(&input_key), Some(true));
     }
 }

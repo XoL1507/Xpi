@@ -5,11 +5,7 @@ import { useZodForm } from '@mysten/core';
 import { ArrowRight12 } from '@mysten/icons';
 import { TransactionBlock, getPureSerializationType } from '@mysten/sui.js/transactions';
 import { Button } from '@mysten/ui';
-import {
-	ConnectButton,
-	useCurrentAccount,
-	useSignAndExecuteTransactionBlock,
-} from '@mysten/dapp-kit';
+import { useWalletKit, ConnectButton } from '@mysten/wallet-kit';
 import { useMutation } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useMemo } from 'react';
@@ -45,8 +41,7 @@ export function ModuleFunction({
 	functionName,
 	functionDetails,
 }: ModuleFunctionProps) {
-	const currentAccount = useCurrentAccount();
-	const { mutateAsync: signAndExecuteTransactionBlock } = useSignAndExecuteTransactionBlock();
+	const { isConnected, signAndExecuteTransactionBlock } = useWalletKit();
 	const { handleSubmit, formState, register, control } = useZodForm({
 		schema: argsSchema,
 	});
@@ -87,8 +82,7 @@ export function ModuleFunction({
 			return result;
 		},
 	});
-
-	const isExecuteDisabled = isValidating || !isValid || isSubmitting || !currentAccount;
+	const isExecuteDisabled = isValidating || !isValid || isSubmitting || !isConnected;
 
 	return (
 		<DisclosureBox defaultOpen={defaultOpen} title={functionName}>
@@ -123,7 +117,7 @@ export function ModuleFunction({
 						variant="primary"
 						type="submit"
 						disabled={isExecuteDisabled}
-						loading={execute.isPending}
+						loading={execute.isLoading}
 					>
 						Execute
 					</Button>
@@ -134,9 +128,10 @@ export function ModuleFunction({
 								<ArrowRight12 fill="currentColor" className="-rotate-45" />
 							</>
 						}
+						size="md"
 						className={clsx(
 							'!rounded-md !text-bodySmall',
-							currentAccount
+							isConnected
 								? '!border !border-solid !border-steel !bg-white !font-mono !text-hero-dark !shadow-sm !shadow-ebony/5'
 								: '!flex !flex-nowrap !items-center !gap-1 !bg-sui-dark !font-sans !text-sui-light hover:!bg-sui-dark hover:!text-white',
 						)}

@@ -1,15 +1,19 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
+import { ArrowBgFill16, Plus12 } from '@mysten/icons';
+import * as CollapsiblePrimitive from '@radix-ui/react-collapsible';
+import { useMutation } from '@tanstack/react-query';
+import { forwardRef, useState } from 'react';
+import toast from 'react-hot-toast';
 import { type AccountType, type SerializedUIAccount } from '_src/background/accounts/Account';
-import { type ZkLoginProvider } from '_src/background/accounts/zklogin/providers';
-import { isZkLoginAccountSerializedUI } from '_src/background/accounts/zklogin/ZkLoginAccount';
+import { isZkAccountSerializedUI } from '_src/background/accounts/zk/ZkAccount';
+import { type ZkProvider } from '_src/background/accounts/zk/providers';
 import { AccountIcon } from '_src/ui/app/components/accounts/AccountIcon';
 import { AccountItem } from '_src/ui/app/components/accounts/AccountItem';
 import { useAccountsFormContext } from '_src/ui/app/components/accounts/AccountsFormContext';
 import { NicknameDialog } from '_src/ui/app/components/accounts/NicknameDialog';
 import { VerifyPasswordModal } from '_src/ui/app/components/accounts/VerifyPasswordModal';
 import { useAccounts } from '_src/ui/app/hooks/useAccounts';
-import { useAccountSources } from '_src/ui/app/hooks/useAccountSources';
 import { useBackgroundClient } from '_src/ui/app/hooks/useBackgroundClient';
 import { useCreateAccountsMutation } from '_src/ui/app/hooks/useCreateAccountMutation';
 import { Button } from '_src/ui/app/shared/ButtonUI';
@@ -24,30 +28,24 @@ import {
 import { Heading } from '_src/ui/app/shared/heading';
 import { Text } from '_src/ui/app/shared/text';
 import { ButtonOrLink, type ButtonOrLinkProps } from '_src/ui/app/shared/utils/ButtonOrLink';
-import { ArrowBgFill16, Plus12 } from '@mysten/icons';
-import * as CollapsiblePrimitive from '@radix-ui/react-collapsible';
-import { useMutation } from '@tanstack/react-query';
-import { forwardRef, useState } from 'react';
-import toast from 'react-hot-toast';
 
 const accountTypeToLabel: Record<AccountType, string> = {
 	'mnemonic-derived': 'Passphrase Derived',
 	qredo: 'Qredo',
 	imported: 'Imported',
 	ledger: 'Ledger',
-	zkLogin: 'zkLogin',
+	zk: 'zkLogin',
 };
 
-const providerToLabel: Record<ZkLoginProvider, string> = {
+const providerToLabel: Record<ZkProvider, string> = {
 	google: 'Google',
 	twitch: 'Twitch',
 	facebook: 'Facebook',
-	kakao: 'Kakao',
 };
 
 export function getGroupTitle(aGroupAccount: SerializedUIAccount) {
 	// TODO: revisit this logic for determining account provider
-	return isZkLoginAccountSerializedUI(aGroupAccount)
+	return isZkAccountSerializedUI(aGroupAccount)
 		? providerToLabel[aGroupAccount?.provider] ?? 'zkLogin'
 		: accountTypeToLabel[aGroupAccount?.type] || '';
 }
@@ -59,7 +57,7 @@ const FooterLink = forwardRef<HTMLAnchorElement | HTMLButtonElement, ButtonOrLin
 		return (
 			<ButtonOrLink
 				ref={ref}
-				className="transition text-hero-darkest/40 hover:text-hero-darkest/50 no-underline uppercase outline-none border-none bg-transparent cursor-pointer"
+				className="text-hero-darkest/40 no-underline uppercase hover:text-hero outline-none border-none bg-transparent hover:cursor-pointer"
 				to={to}
 				{...props}
 			>
@@ -92,7 +90,7 @@ function AccountFooter({ accountID, showExport }: { accountID: string; showExpor
 					{showExport ? (
 						<FooterLink to={`/accounts/export/${accountID}`}>Export Private Key</FooterLink>
 					) : null}
-					{allAccounts.isPending ? null : (
+					{allAccounts.isLoading ? null : (
 						<FooterLink
 							onClick={() => setIsConfirmationVisible(true)}
 							disabled={isConfirmationVisible}
@@ -126,7 +124,7 @@ function AccountFooter({ accountID, showExport }: { accountID: string; showExpor
 								variant="warning"
 								size="tall"
 								text="Remove"
-								loading={removeAccountMutation.isPending}
+								loading={removeAccountMutation.isLoading}
 								onClick={() => {
 									removeAccountMutation.mutate(undefined, {
 										onSuccess: () => toast.success('Account removed'),
@@ -145,18 +143,16 @@ function AccountFooter({ accountID, showExport }: { accountID: string; showExpor
 export function AccountGroup({
 	accounts,
 	type,
-	accountSourceID,
+	accountSource,
 }: {
 	accounts: SerializedUIAccount[];
 	type: AccountType;
-	accountSourceID?: string;
+	accountSource?: string;
 }) {
 	const createAccountMutation = useCreateAccountsMutation();
 	const isMnemonicDerivedGroup = type === 'mnemonic-derived';
 	const [accountsFormValues, setAccountsFormValues] = useAccountsFormContext();
 	const [isPasswordModalVisible, setPasswordModalVisible] = useState(false);
-	const { data: accountSources } = useAccountSources();
-	const accountSource = accountSources?.find(({ id }) => id === accountSourceID);
 	return (
 		<>
 			<CollapsiblePrimitive.Root defaultOpen asChild>
@@ -170,19 +166,14 @@ export function AccountGroup({
 							<div className="h-px bg-gray-45 flex flex-1 flex-shrink-0" />
 							{isMnemonicDerivedGroup && accountSource ? (
 								<ButtonOrLink
-									loading={createAccountMutation.isPending}
 									onClick={async (e) => {
 										// prevent the collapsible from closing when clicking the "new" button
 										e.stopPropagation();
 										setAccountsFormValues({
 											type: 'mnemonic-derived',
-											sourceID: accountSource.id,
+											sourceID: accountSource,
 										});
-										if (accountSource.isLocked) {
-											setPasswordModalVisible(true);
-										} else {
-											createAccountMutation.mutate({ type: 'mnemonic-derived' });
-										}
+										setPasswordModalVisible(true);
 									}}
 									className="items-center justify-center gap-0.5 cursor-pointer appearance-none uppercase flex bg-transparent border-0 outline-none text-hero hover:text-hero-darkest"
 								>
@@ -217,7 +208,7 @@ export function AccountGroup({
 									variant="secondary"
 									size="tall"
 									text="Export Passphrase"
-									to={`../export/passphrase/${accountSource.id}`}
+									to={`../export/passphrase/${accountSource}`}
 								/>
 							) : null}
 						</div>
@@ -228,7 +219,7 @@ export function AccountGroup({
 				<VerifyPasswordModal
 					open
 					onVerify={async (password) => {
-						if (accountsFormValues.current && accountsFormValues.current.type !== 'zkLogin') {
+						if (accountsFormValues.current && accountsFormValues.current.type !== 'zk') {
 							await createAccountMutation.mutateAsync({
 								type: accountsFormValues.current.type,
 								password,

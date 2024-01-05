@@ -1,21 +1,20 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { entropyToSerialized, mnemonicToEntropy } from '_src/shared/utils/bip39';
-import { ImportRecoveryPhraseForm } from '_src/ui/app/components/accounts/ImportRecoveryPhraseForm';
-import Overlay from '_src/ui/app/components/overlay';
-import { useRecoveryDataMutation } from '_src/ui/app/hooks/useRecoveryDataMutation';
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-
+import { useForgotPasswordContext } from './ForgotPasswordPage';
 import { RecoverAccountsGroup } from '../../../components/accounts/RecoverAccountsGroup';
 import { useAccountGroups } from '../../../hooks/useAccountGroups';
 import { useAccountSources } from '../../../hooks/useAccountSources';
 import { Button } from '../../../shared/ButtonUI';
 import { Heading } from '../../../shared/heading';
 import { Text } from '../../../shared/text';
-import { useForgotPasswordContext } from './ForgotPasswordPage';
+import { entropyToSerialized, mnemonicToEntropy } from '_src/shared/utils/bip39';
+import { ImportRecoveryPhraseForm } from '_src/ui/app/components/accounts/ImportRecoveryPhraseForm';
+import Overlay from '_src/ui/app/components/overlay';
+import { useRecoveryDataMutation } from '_src/ui/app/hooks/useRecoveryDataMutation';
 
 export function RecoverManyPage() {
 	const allAccountSources = useAccountSources();
@@ -23,12 +22,12 @@ export function RecoverManyPage() {
 	const navigate = useNavigate();
 	useEffect(() => {
 		if (
-			!allAccountSources.isPending &&
+			!allAccountSources.isLoading &&
 			!allAccountSources.data?.find(({ type }) => type === 'mnemonic')
 		) {
 			navigate('/', { replace: true });
 		}
-	}, [allAccountSources.isPending, allAccountSources.data, navigate]);
+	}, [allAccountSources.isLoading, allAccountSources.data, navigate]);
 	const { value } = useForgotPasswordContext();
 	const addRecoveryDataMutation = useRecoveryDataMutation();
 	const [recoverInfo, setRecoverInfo] = useState<{ title: string; accountSourceID: string } | null>(
@@ -78,7 +77,7 @@ export function RecoverManyPage() {
 				title={recoverInfo?.title}
 				showModal={!!recoverInfo}
 				closeOverlay={() => {
-					if (addRecoveryDataMutation.isPending) {
+					if (addRecoveryDataMutation.isLoading) {
 						return;
 					}
 					setRecoverInfo(null);

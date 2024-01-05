@@ -6,7 +6,6 @@ import type { MutationKey } from '@tanstack/react-query';
 export const walletMutationKeys = {
 	all: { baseScope: 'wallet' },
 	connectWallet: formMutationKeyFn('connect-wallet'),
-	autoconnectWallet: formMutationKeyFn('autoconnect-wallet'),
 	disconnectWallet: formMutationKeyFn('disconnect-wallet'),
 	signPersonalMessage: formMutationKeyFn('sign-personal-message'),
 	signTransactionBlock: formMutationKeyFn('sign-transaction-block'),

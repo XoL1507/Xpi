@@ -5,14 +5,13 @@ use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::RpcModule;
 
-use sui_json_rpc::SuiRpcModule;
-use sui_json_rpc_api::{
+use sui_json_rpc::api::{
     validate_limit, ExtendedApiServer, QUERY_MAX_RESULT_LIMIT, QUERY_MAX_RESULT_LIMIT_CHECKPOINTS,
 };
+use sui_json_rpc::SuiRpcModule;
 use sui_json_rpc_types::{
-    AddressMetrics, CheckpointedObjectID, EpochInfo, EpochMetricsPage, EpochPage, MoveCallMetrics,
-    NetworkMetrics, Page, QueryObjectsPage, SuiObjectDataFilter, SuiObjectResponse,
-    SuiObjectResponseQuery,
+    AddressMetrics, CheckpointedObjectID, EpochInfo, EpochPage, MoveCallMetrics, NetworkMetrics,
+    Page, QueryObjectsPage, SuiObjectDataFilter, SuiObjectResponse, SuiObjectResponseQuery,
 };
 use sui_open_rpc::Module;
 use sui_types::sui_serde::BigInt;
@@ -110,15 +109,6 @@ impl<S: IndexerStore + Sync + Send + 'static> ExtendedApiServer for ExtendedApi<
         })
     }
 
-    async fn get_epoch_metrics(
-        &self,
-        _cursor: Option<BigInt<u64>>,
-        _limit: Option<usize>,
-        _descending_order: Option<bool>,
-    ) -> RpcResult<EpochMetricsPage> {
-        unimplemented!();
-    }
-
     async fn get_current_epoch(&self) -> RpcResult<EpochInfo> {
         Ok(self.state.get_current_epoch().await?)
     }
@@ -190,6 +180,6 @@ where
     }
 
     fn rpc_doc_module() -> Module {
-        sui_json_rpc_api::ExtendedApiOpenRpc::module_doc()
+        sui_json_rpc::api::ExtendedApiOpenRpc::module_doc()
     }
 }

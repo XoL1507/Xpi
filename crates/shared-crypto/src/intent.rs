@@ -64,7 +64,6 @@ pub enum IntentScope {
     SenderSignedTransaction = 4, // Used for an authority signature on a user signed transaction.
     ProofOfPossession = 5, // Used as a signature representing an authority's proof of possession of its authority protocol key.
     HeaderDigest = 6,      // Used for narwhal authority signature on header digest.
-    BridgeEventUnused = 7, // for bridge purposes but it's currently not included in messages.
 }
 
 impl TryFrom<u8> for IntentScope {
@@ -113,14 +112,6 @@ impl Intent {
     pub fn sui_transaction() -> Self {
         Self {
             scope: IntentScope::TransactionData,
-            version: IntentVersion::V0,
-            app_id: AppId::Sui,
-        }
-    }
-
-    pub fn personal_message() -> Self {
-        Self {
-            scope: IntentScope::PersonalMessage,
             version: IntentVersion::V0,
             app_id: AppId::Sui,
         }

@@ -24,6 +24,7 @@ export type PayloadType =
 	| 'disconnect-app'
 	| 'done'
 	| 'keyring'
+	| 'stake-request'
 	| 'wallet-status-changed'
 	| 'get-features'
 	| 'features-response'

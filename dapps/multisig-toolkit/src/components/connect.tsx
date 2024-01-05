@@ -1,28 +1,17 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-	ConnectModal,
-	useAccounts,
-	useCurrentAccount,
-	useDisconnectWallet,
-	useSwitchAccount,
-} from '@mysten/dapp-kit';
+import { Button } from './ui/button';
+import { useState } from 'react';
+import { useWalletKit, ConnectModal } from '@mysten/wallet-kit';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from './ui/command';
 import { formatAddress } from '@mysten/sui.js/utils';
 import { Check, ChevronsUpDown } from 'lucide-react';
-import { useState } from 'react';
-
 import { cn } from '@/lib/utils';
 
-import { Button } from './ui/button';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from './ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-
 function ConnectedButton() {
-	const accounts = useAccounts();
-	const currentAccount = useCurrentAccount();
-	const { mutateAsync: switchAccount } = useSwitchAccount();
-	const { mutateAsync: disconnect } = useDisconnectWallet();
+	const { accounts, currentAccount, selectAccount, disconnect } = useWalletKit();
 	const [open, setOpen] = useState(false);
 
 	return (
@@ -49,7 +38,7 @@ function ConnectedButton() {
 								value={account.address}
 								className="cursor-pointer"
 								onSelect={() => {
-									switchAccount({ account });
+									selectAccount(account);
 									setOpen(false);
 								}}
 							>
@@ -80,7 +69,7 @@ function ConnectedButton() {
 
 export function ConnectWallet() {
 	const [connectModalOpen, setConnectModalOpen] = useState(false);
-	const currentAccount = useCurrentAccount();
+	const { currentAccount } = useWalletKit();
 
 	return (
 		<>
@@ -90,11 +79,7 @@ export function ConnectWallet() {
 				<Button onClick={() => setConnectModalOpen(true)}>Connect Wallet</Button>
 			)}
 
-			<ConnectModal
-				trigger={<></>}
-				open={connectModalOpen}
-				onOpenChange={(open) => setConnectModalOpen(open)}
-			/>
+			<ConnectModal open={connectModalOpen} onClose={() => setConnectModalOpen(false)} />
 		</>
 	);
 }

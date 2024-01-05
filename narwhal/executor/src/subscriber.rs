@@ -220,8 +220,7 @@ impl Subscriber {
             debug!("No batches to fetch, payload is empty");
             return ConsensusOutput {
                 sub_dag: Arc::new(deliver),
-                // Length of `batches` must match certificate count in `sub_dag` even if empty.
-                batches: vec![Vec::new(); num_certs],
+                batches: vec![],
             };
         }
 

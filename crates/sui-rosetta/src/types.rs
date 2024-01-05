@@ -337,10 +337,6 @@ impl From<SuiPublicKey> for PublicKey {
                 hex_bytes: Hex::from_bytes(&k.0),
                 curve_type: CurveType::Secp256r1,
             },
-            SuiPublicKey::ZkLogin(k) => PublicKey {
-                hex_bytes: Hex::from_bytes(&k.0),
-                curve_type: CurveType::ZkLogin, // inaccurate but added for completeness.
-            },
         }
     }
 }
@@ -361,7 +357,6 @@ pub enum CurveType {
     Secp256k1,
     Edwards25519,
     Secp256r1,
-    ZkLogin,
 }
 
 impl From<CurveType> for SignatureScheme {
@@ -370,7 +365,6 @@ impl From<CurveType> for SignatureScheme {
             CurveType::Secp256k1 => SignatureScheme::Secp256k1,
             CurveType::Edwards25519 => SignatureScheme::ED25519,
             CurveType::Secp256r1 => SignatureScheme::Secp256r1,
-            CurveType::ZkLogin => SignatureScheme::ZkLoginAuthenticator,
         }
     }
 }
@@ -413,7 +407,6 @@ pub enum OperationType {
     ConsensusCommitPrologue,
     ProgrammableTransaction,
     AuthenticatorStateUpdate,
-    RandomnessStateUpdate,
     EndOfEpochTransaction,
 }
 
@@ -422,8 +415,7 @@ impl From<&SuiTransactionBlockKind> for OperationType {
         match tx {
             SuiTransactionBlockKind::ChangeEpoch(_) => OperationType::EpochChange,
             SuiTransactionBlockKind::Genesis(_) => OperationType::Genesis,
-            SuiTransactionBlockKind::ConsensusCommitPrologue(_)
-            | SuiTransactionBlockKind::ConsensusCommitPrologueV2(_) => {
+            SuiTransactionBlockKind::ConsensusCommitPrologue(_) => {
                 OperationType::ConsensusCommitPrologue
             }
             SuiTransactionBlockKind::ProgrammableTransaction(_) => {
@@ -431,9 +423,6 @@ impl From<&SuiTransactionBlockKind> for OperationType {
             }
             SuiTransactionBlockKind::AuthenticatorStateUpdate(_) => {
                 OperationType::AuthenticatorStateUpdate
-            }
-            SuiTransactionBlockKind::RandomnessStateUpdate(_) => {
-                OperationType::RandomnessStateUpdate
             }
             SuiTransactionBlockKind::EndOfEpochTransaction(_) => {
                 OperationType::EndOfEpochTransaction

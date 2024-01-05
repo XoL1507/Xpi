@@ -1,27 +1,26 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { ampli } from '_src/shared/analytics/ampli';
-import { Collapsible } from '_src/ui/app/shared/collapse';
 import { Filter16, Plus12 } from '@mysten/icons';
 import * as ToggleGroup from '@radix-ui/react-toggle-group';
-import cn from 'clsx';
-import { useMemo, useState } from 'react';
-
+import cn from 'classnames';
+import { useMemo } from 'react';
+import { AccountListItem } from './AccountListItem';
+import { FooterLink } from './FooterLink';
 import { getAccountBackgroundByType } from '../../helpers/accounts';
 import { useAccountGroups } from '../../hooks/useAccountGroups';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { useBackgroundClient } from '../../hooks/useBackgroundClient';
 import { Heading } from '../../shared/heading';
-import { AccountListItem } from './AccountListItem';
-import { FooterLink } from './FooterLink';
+
+import { ampli } from '_src/shared/analytics/ampli';
+import { Collapsible } from '_src/ui/app/shared/collapse';
 
 export function AccountsList() {
 	const accountGroups = useAccountGroups();
 	const accounts = accountGroups.list();
 	const activeAccount = useActiveAccount();
 	const backgroundClient = useBackgroundClient();
-	const [isSwitchToAccountOpen, setIsSwitchToAccountOpen] = useState(false);
 
 	const otherAccounts = useMemo(
 		() => accounts.filter((a) => a.id !== activeAccount?.id) || [],
@@ -36,7 +35,6 @@ export function AccountsList() {
 				toAccountType: account.type,
 			});
 			await backgroundClient.selectAccount(accountID);
-			setIsSwitchToAccountOpen(false);
 		}
 	};
 	if (!accounts || !activeAccount) return null;
@@ -59,7 +57,7 @@ export function AccountsList() {
 				onValueChange={handleSelectAccount}
 			>
 				<>
-					<Collapsible defaultOpen title="Current" shade="darker">
+					<Collapsible title="Current" defaultOpen shade="darker">
 						<ToggleGroup.Item asChild value={activeAccount.id}>
 							<div>
 								<AccountListItem account={activeAccount} editable showLock />
@@ -68,12 +66,7 @@ export function AccountsList() {
 					</Collapsible>
 
 					{otherAccounts.length ? (
-						<Collapsible
-							isOpen={isSwitchToAccountOpen}
-							onOpenChange={setIsSwitchToAccountOpen}
-							title="Switch To"
-							shade="darker"
-						>
+						<Collapsible title="Switch To" shade="darker">
 							<div className="flex flex-col gap-3">
 								{otherAccounts.map((account) => {
 									return (

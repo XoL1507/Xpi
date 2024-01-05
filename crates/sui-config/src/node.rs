@@ -12,7 +12,6 @@ use once_cell::sync::OnceCell;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -20,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::usize;
 use sui_keys::keypair_file::{read_authority_keypair_from_file, read_keypair_from_file};
-use sui_protocol_config::{Chain, SupportedProtocolVersions};
+use sui_protocol_config::SupportedProtocolVersions;
 use sui_storage::object_store::ObjectStoreConfig;
 use sui_types::base_types::{ObjectID, SuiAddress};
 use sui_types::crypto::AuthorityPublicKeyBytes;
@@ -153,46 +152,12 @@ pub struct NodeConfig {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_kv_store_write_config: Option<TransactionKeyValueStoreWriteConfig>,
-
-    #[serde(default = "default_jwk_fetch_interval_seconds")]
-    pub jwk_fetch_interval_seconds: u64,
-
-    #[serde(default = "default_zklogin_oauth_providers")]
-    pub zklogin_oauth_providers: BTreeMap<Chain, BTreeSet<String>>,
-
-    #[serde(default = "default_overload_threshold_config")]
-    pub overload_threshold_config: OverloadThresholdConfig,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct TransactionKeyValueStoreReadConfig {
     pub base_url: String,
-}
-
-fn default_jwk_fetch_interval_seconds() -> u64 {
-    3600
-}
-
-pub fn default_zklogin_oauth_providers() -> BTreeMap<Chain, BTreeSet<String>> {
-    let mut map = BTreeMap::new();
-    let experimental_providers = BTreeSet::from([
-        "Google".to_string(),
-        "Facebook".to_string(),
-        "Twitch".to_string(),
-        "Kakao".to_string(),
-        "Apple".to_string(),
-        "Slack".to_string(),
-    ]);
-    let providers = BTreeSet::from([
-        "Google".to_string(),
-        "Facebook".to_string(),
-        "Twitch".to_string(),
-    ]);
-    map.insert(Chain::Mainnet, providers.clone());
-    map.insert(Chain::Testnet, providers);
-    map.insert(Chain::Unknown, experimental_providers);
-    map
 }
 
 fn default_transaction_kv_store_config() -> TransactionKeyValueStoreReadConfig {
@@ -332,14 +297,6 @@ impl NodeConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum ConsensusProtocol {
-    #[serde(rename = "narwhal")]
-    Narwhal,
-    #[serde(rename = "mysticeti")]
-    Mysticeti,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ConsensusConfig {
     pub address: Multiaddr,
@@ -365,11 +322,6 @@ pub struct ConsensusConfig {
     pub submit_delay_step_override_millis: Option<u64>,
 
     pub narwhal_config: ConsensusParameters,
-
-    /// The choice of consensus protocol to run. We default to Narwhal.
-    #[serde(skip)]
-    #[serde(default = "default_consensus_protocol")]
-    pub protocol: ConsensusProtocol,
 }
 
 impl ConsensusConfig {
@@ -395,10 +347,6 @@ impl ConsensusConfig {
     }
 }
 
-pub fn default_consensus_protocol() -> ConsensusProtocol {
-    ConsensusProtocol::Narwhal
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct CheckpointExecutorConfig {
@@ -415,11 +363,6 @@ pub struct CheckpointExecutorConfig {
     /// If unspecified, this will default to `10`.
     #[serde(default = "default_local_execution_timeout_sec")]
     pub local_execution_timeout_sec: u64,
-
-    /// Optional directory used for data ingestion pipeline
-    /// When specified, each executed checkpoint will be saved in a local directory for post processing
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_ingestion_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -451,6 +394,11 @@ pub struct ExpensiveSafetyCheckConfig {
     #[serde(default)]
     force_disable_state_consistency_check: bool,
 
+    /// If enabled, we run the Move VM in paranoid mode, which provides protection
+    /// against some (but not all) potential bugs in the bytecode verifier
+    #[serde(default)]
+    enable_move_vm_paranoid_checks: bool,
+
     #[serde(default)]
     enable_secondary_index_checks: bool,
     // TODO: Add more expensive checks here
@@ -464,6 +412,7 @@ impl ExpensiveSafetyCheckConfig {
             force_disable_epoch_sui_conservation_check: false,
             enable_state_consistency_check: true,
             force_disable_state_consistency_check: false,
+            enable_move_vm_paranoid_checks: true,
             enable_secondary_index_checks: false, // Disable by default for now
         }
     }
@@ -475,8 +424,13 @@ impl ExpensiveSafetyCheckConfig {
             force_disable_epoch_sui_conservation_check: true,
             enable_state_consistency_check: false,
             force_disable_state_consistency_check: true,
+            enable_move_vm_paranoid_checks: false,
             enable_secondary_index_checks: false,
         }
+    }
+
+    pub fn enable_paranoid_checks(&mut self) {
+        self.enable_move_vm_paranoid_checks = true
     }
 
     pub fn force_disable_epoch_sui_conservation_check(&mut self) {
@@ -495,6 +449,10 @@ impl ExpensiveSafetyCheckConfig {
     pub fn enable_state_consistency_check(&self) -> bool {
         (self.enable_state_consistency_check || cfg!(debug_assertions))
             && !self.force_disable_state_consistency_check
+    }
+
+    pub fn enable_move_vm_paranoid_checks(&self) -> bool {
+        self.enable_move_vm_paranoid_checks
     }
 
     pub fn enable_deep_per_tx_sui_conservation_check(&self) -> bool {
@@ -519,7 +477,6 @@ impl Default for CheckpointExecutorConfig {
         Self {
             checkpoint_execution_max_concurrency: default_checkpoint_execution_max_concurrency(),
             local_execution_timeout_sec: default_local_execution_timeout_sec(),
-            data_ingestion_dir: None,
         }
     }
 }
@@ -528,25 +485,20 @@ impl Default for CheckpointExecutorConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct AuthorityStorePruningConfig {
     /// number of the latest epoch dbs to retain
-    #[serde(default = "default_num_latest_epoch_dbs_to_retain")]
     pub num_latest_epoch_dbs_to_retain: usize,
     /// time interval used by the pruner to determine whether there are any epoch DBs to remove
-    #[serde(default = "default_epoch_db_pruning_period_secs")]
     pub epoch_db_pruning_period_secs: u64,
     /// number of epochs to keep the latest version of objects for.
     /// Note that a zero value corresponds to an aggressive pruner.
     /// This mode is experimental and needs to be used with caution.
     /// Use `u64::MAX` to disable the pruner for the objects.
-    #[serde(default)]
     pub num_epochs_to_retain: u64,
     /// pruner's runtime interval used for aggressive mode
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pruning_run_delay_seconds: Option<u64>,
     /// maximum number of checkpoints in the pruning batch. Can be adjusted to increase performance
-    #[serde(default = "default_max_checkpoints_in_batch")]
     pub max_checkpoints_in_batch: usize,
     /// maximum number of transaction in the pruning batch
-    #[serde(default = "default_max_transactions_in_batch")]
     pub max_transactions_in_batch: usize,
     /// enables periodic background compaction for old SST files whose last modified time is
     /// older than `periodic_compaction_threshold_days` days.
@@ -556,44 +508,60 @@ pub struct AuthorityStorePruningConfig {
     /// number of epochs to keep the latest version of transactions and effects for
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_epochs_to_retain_for_checkpoints: Option<u64>,
-    /// disables object tombstone pruning. We don't serialize it if it is the default value, false.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub killswitch_tombstone_pruning: bool,
-}
-
-fn default_num_latest_epoch_dbs_to_retain() -> usize {
-    3
-}
-
-fn default_epoch_db_pruning_period_secs() -> u64 {
-    3600
-}
-
-fn default_max_transactions_in_batch() -> usize {
-    1000
-}
-
-fn default_max_checkpoints_in_batch() -> usize {
-    10
 }
 
 impl Default for AuthorityStorePruningConfig {
     fn default() -> Self {
+        // TODO: Remove this after aggressive pruning is enabled by default
+        let num_epochs_to_retain = if cfg!(msim) { 0 } else { 2 };
+        let pruning_run_delay_seconds = if cfg!(msim) { Some(5) } else { None };
         Self {
-            num_latest_epoch_dbs_to_retain: default_num_latest_epoch_dbs_to_retain(),
-            epoch_db_pruning_period_secs: default_epoch_db_pruning_period_secs(),
-            num_epochs_to_retain: 0,
-            pruning_run_delay_seconds: if cfg!(msim) { Some(2) } else { None },
-            max_checkpoints_in_batch: default_max_checkpoints_in_batch(),
-            max_transactions_in_batch: default_max_transactions_in_batch(),
+            num_latest_epoch_dbs_to_retain: usize::MAX,
+            epoch_db_pruning_period_secs: u64::MAX,
+            num_epochs_to_retain,
+            pruning_run_delay_seconds,
+            max_checkpoints_in_batch: 10,
+            max_transactions_in_batch: 1000,
             periodic_compaction_threshold_days: None,
-            num_epochs_to_retain_for_checkpoints: if cfg!(msim) { Some(2) } else { None },
-            killswitch_tombstone_pruning: false,
+            num_epochs_to_retain_for_checkpoints: None,
         }
     }
 }
 
 impl AuthorityStorePruningConfig {
+    pub fn validator_config() -> Self {
+        // TODO: Remove this after aggressive pruning is enabled by default
+        let num_epochs_to_retain = if cfg!(msim) { 0 } else { 2 };
+        let pruning_run_delay_seconds = if cfg!(msim) { Some(2) } else { None };
+        let num_epochs_to_retain_for_checkpoints = if cfg!(msim) { Some(2) } else { None };
+        Self {
+            num_latest_epoch_dbs_to_retain: 3,
+            epoch_db_pruning_period_secs: 60 * 60,
+            num_epochs_to_retain,
+            pruning_run_delay_seconds,
+            max_checkpoints_in_batch: 10,
+            max_transactions_in_batch: 1000,
+            periodic_compaction_threshold_days: None,
+            num_epochs_to_retain_for_checkpoints,
+        }
+    }
+    pub fn fullnode_config() -> Self {
+        // TODO: Remove this after aggressive pruning is enabled by default
+        let num_epochs_to_retain = if cfg!(msim) { 0 } else { 2 };
+        let pruning_run_delay_seconds = if cfg!(msim) { Some(2) } else { None };
+        let num_epochs_to_retain_for_checkpoints = if cfg!(msim) { Some(2) } else { None };
+        Self {
+            num_latest_epoch_dbs_to_retain: 3,
+            epoch_db_pruning_period_secs: 60 * 60,
+            num_epochs_to_retain,
+            pruning_run_delay_seconds,
+            max_checkpoints_in_batch: 10,
+            max_transactions_in_batch: 1000,
+            periodic_compaction_threshold_days: None,
+            num_epochs_to_retain_for_checkpoints,
+        }
+    }
+
     pub fn set_num_epochs_to_retain_for_checkpoints(&mut self, num_epochs_to_retain: Option<u64>) {
         self.num_epochs_to_retain_for_checkpoints = num_epochs_to_retain;
     }
@@ -609,10 +577,6 @@ impl AuthorityStorePruningConfig {
                     n
                 }
             })
-    }
-
-    pub fn set_killswitch_tombstone_pruning(&mut self, killswitch_tombstone_pruning: bool) {
-        self.killswitch_tombstone_pruning = killswitch_tombstone_pruning;
     }
 }
 
@@ -673,29 +637,6 @@ pub struct TransactionKeyValueStoreWriteConfig {
     pub table_name: String,
     pub bucket_name: String,
     pub concurrency: usize,
-}
-
-/// Configuration for the threshold(s) at which we consider the system
-/// to be overloaded. When one of the threshold is passed, the node may
-/// stop processing new transactions and/or certificates until the congestion
-/// resolves.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct OverloadThresholdConfig {
-    pub max_txn_age_in_queue: Duration,
-    // TODO: Move other thresholds here as well, including `MAX_TM_QUEUE_LENGTH`
-    // and `MAX_PER_OBJECT_QUEUE_LENGTH`.
-}
-
-impl Default for OverloadThresholdConfig {
-    fn default() -> Self {
-        Self {
-            max_txn_age_in_queue: Duration::from_secs(1), // 1 second
-        }
-    }
-}
-
-fn default_overload_threshold_config() -> OverloadThresholdConfig {
-    OverloadThresholdConfig::default()
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, Eq)]

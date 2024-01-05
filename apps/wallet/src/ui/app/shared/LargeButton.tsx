@@ -1,11 +1,11 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import LoadingIndicator from '_components/loading/LoadingIndicator';
-import clsx from 'clsx';
+import clsx from 'classnames';
 import { forwardRef, type ReactNode, type Ref } from 'react';
 
 import { ButtonOrLink, type ButtonOrLinkProps } from './utils/ButtonOrLink';
+import LoadingIndicator from '_components/loading/LoadingIndicator';
 
 function Decorator({ disabled, children }: { disabled?: boolean; children: ReactNode }) {
 	return (
@@ -29,7 +29,6 @@ interface LargeButtonProps extends ButtonOrLinkProps {
 	spacing?: string;
 	center?: boolean;
 	disabled?: boolean;
-	primary?: boolean;
 }
 
 export const LargeButton = forwardRef(
@@ -43,8 +42,6 @@ export const LargeButton = forwardRef(
 			loading,
 			disabled,
 			children,
-			primary,
-			className,
 			...otherProps
 		}: LargeButtonProps,
 		ref: Ref<HTMLAnchorElement | HTMLButtonElement>,
@@ -56,9 +53,7 @@ export const LargeButton = forwardRef(
 				className={clsx(
 					'group border border-solid border-transparent flex rounded-md items-center py-2 px-8 justify-between no-underline',
 					disabled ? 'bg-hero-darkest/5 pointer-events-none' : 'bg-white/80 hover:border-sui/10',
-					primary ? '!bg-sui-primaryBlue2023' : '',
 					spacing === 'sm' && '!p-3',
-					className,
 				)}
 			>
 				{loading && (
@@ -75,7 +70,6 @@ export const LargeButton = forwardRef(
 								className={clsx(
 									'text-bodySmall font-semibold',
 									disabled ? 'text-steel' : 'text-hero-dark group-hover:text-hero',
-									primary ? '!text-white' : '',
 								)}
 							>
 								{children}

@@ -4,7 +4,7 @@
 use crate::{
     crypto::{CompressedSignature, SignatureScheme},
     multisig::{MultiSig, MultiSigPublicKey},
-    signature::{AuthenticatorTrait, GenericSignature, VerifyParams},
+    signature::{AuthenticatorTrait, VerifyParams},
     sui_serde::SuiBitmap,
 };
 pub use enum_dispatch::enum_dispatch;
@@ -23,7 +23,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::{
     base_types::{EpochId, SuiAddress},
-    crypto::PublicKey,
+    crypto::{PublicKey, Signature},
     error::SuiError,
 };
 
@@ -87,18 +87,6 @@ impl Hash for MultiSigLegacy {
 
 impl AuthenticatorTrait for MultiSigLegacy {
     fn verify_user_authenticator_epoch(&self, _: EpochId) -> Result<(), SuiError> {
-        Ok(())
-    }
-
-    fn verify_uncached_checks<T>(
-        &self,
-        _value: &IntentMessage<T>,
-        _author: SuiAddress,
-        _aux_verify_data: &VerifyParams,
-    ) -> Result<(), SuiError>
-    where
-        T: Serialize,
-    {
         Ok(())
     }
 
@@ -166,7 +154,7 @@ pub fn bitmap_to_u16(roaring: RoaringBitmap) -> Result<u16, SuiError> {
 impl MultiSigLegacy {
     /// This combines a list of [enum Signature] `flag || signature || pk` to a MultiSig.
     pub fn combine(
-        full_sigs: Vec<GenericSignature>,
+        full_sigs: Vec<Signature>,
         multisig_pk: MultiSigPublicKeyLegacy,
     ) -> Result<Self, SuiError> {
         multisig_pk
@@ -311,7 +299,7 @@ impl MultiSigPublicKeyLegacy {
             });
         }
         Ok(MultiSigPublicKeyLegacy {
-            pk_map: pks.into_iter().zip(weights).collect(),
+            pk_map: pks.into_iter().zip(weights.into_iter()).collect(),
             threshold,
         })
     }

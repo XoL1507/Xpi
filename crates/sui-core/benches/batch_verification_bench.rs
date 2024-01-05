@@ -78,8 +78,6 @@ fn async_verifier_bench(c: &mut Criterion) {
                         metrics.clone(),
                         vec![],
                         ZkLoginEnv::Test,
-                        true,
-                        true,
                     ));
 
                     b.iter(|| {

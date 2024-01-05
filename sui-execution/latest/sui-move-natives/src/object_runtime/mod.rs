@@ -2,15 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use better_any::{Tid, TidAble};
-use indexmap::map::IndexMap;
-use indexmap::set::IndexSet;
+use linked_hash_map::LinkedHashMap;
 use move_binary_format::errors::{PartialVMError, PartialVMResult};
 use move_core_types::{
     account_address::AccountAddress,
-    annotated_value::{MoveStruct, MoveTypeLayout, MoveValue},
     effects::Op,
     language_storage::StructTag,
-    runtime_value as R,
+    value::{MoveStruct, MoveTypeLayout, MoveValue},
     vm_status::StatusCode,
 };
 use move_vm_types::{
@@ -24,15 +22,13 @@ use std::{
 use sui_protocol_config::{check_limit_by_meter, LimitThresholdCrossed, ProtocolConfig};
 use sui_types::{
     base_types::{MoveObjectType, ObjectID, SequenceNumber, SuiAddress},
-    committee::EpochId,
     error::{ExecutionError, ExecutionErrorKind, VMMemoryLimitExceededSubStatusCode},
-    execution::DynamicallyLoadedObjectMetadata,
+    execution::LoadedChildObjectMetadata,
     id::UID,
     metrics::LimitsMetrics,
     object::{MoveObject, Owner},
     storage::ChildObjectResolver,
-    SUI_AUTHENTICATOR_STATE_OBJECT_ID, SUI_CLOCK_OBJECT_ID, SUI_RANDOMNESS_STATE_OBJECT_ID,
-    SUI_SYSTEM_STATE_OBJECT_ID,
+    SUI_AUTHENTICATOR_STATE_OBJECT_ID, SUI_CLOCK_OBJECT_ID, SUI_SYSTEM_STATE_OBJECT_ID,
 };
 
 pub(crate) mod object_store;
@@ -50,7 +46,8 @@ pub enum ObjectEvent {
     DeleteObjectID(ObjectID),
 }
 
-type Set<K> = IndexSet<K>;
+// LinkedHashSet has a bug for accessing the back/last element
+type Set<K> = LinkedHashMap<K, ()>;
 
 #[derive(Default)]
 pub(crate) struct TestInventories {
@@ -71,7 +68,7 @@ pub struct LoadedRuntimeObject {
 }
 
 pub struct RuntimeResults {
-    pub writes: IndexMap<ObjectID, (Owner, Type, Value)>,
+    pub writes: LinkedHashMap<ObjectID, (Owner, Type, Value)>,
     pub user_events: Vec<(Type, StructTag, Value)>,
     // Loaded child objects, their loaded version/digest and whether they were modified.
     pub loaded_child_objects: BTreeMap<ObjectID, LoadedRuntimeObject>,
@@ -88,11 +85,56 @@ pub(crate) struct ObjectRuntimeState {
     deleted_ids: Set<ObjectID>,
     // transfers to a new owner (shared, immutable, object, or account address)
     // TODO these struct tags can be removed if type_to_type_tag was exposed in the session
-    transfers: IndexMap<ObjectID, (Owner, Type, Value)>,
+    transfers: LinkedHashMap<ObjectID, (Owner, Type, Value)>,
     events: Vec<(Type, StructTag, Value)>,
     // total size of events emitted so far
     total_events_size: u64,
-    received: IndexMap<ObjectID, DynamicallyLoadedObjectMetadata>,
+}
+
+#[derive(Clone)]
+pub(crate) struct LocalProtocolConfig {
+    pub(crate) max_num_deleted_move_object_ids: u64,
+    pub(crate) max_num_deleted_move_object_ids_system_tx: u64,
+    pub(crate) max_num_event_emit: u64,
+    pub(crate) max_num_new_move_object_ids: u64,
+    pub(crate) max_num_new_move_object_ids_system_tx: u64,
+    pub(crate) max_num_transferred_move_object_ids: u64,
+    pub(crate) max_num_transferred_move_object_ids_system_tx: u64,
+    pub(crate) max_event_emit_size: u64,
+    pub(crate) max_event_emit_size_total: Option<u64>,
+    pub(crate) object_runtime_max_num_cached_objects: u64,
+    pub(crate) object_runtime_max_num_cached_objects_system_tx: u64,
+    pub(crate) object_runtime_max_num_store_entries: u64,
+    pub(crate) object_runtime_max_num_store_entries_system_tx: u64,
+    pub(crate) loaded_child_object_format: bool,
+    pub(crate) loaded_child_object_format_type: bool,
+}
+
+impl LocalProtocolConfig {
+    fn new(config: &ProtocolConfig) -> Self {
+        Self {
+            max_num_deleted_move_object_ids: config.max_num_deleted_move_object_ids(),
+            max_num_event_emit: config.max_num_event_emit(),
+            max_num_new_move_object_ids: config.max_num_new_move_object_ids(),
+            max_num_transferred_move_object_ids: config.max_num_transferred_move_object_ids(),
+            max_event_emit_size: config.max_event_emit_size(),
+            max_event_emit_size_total: config.max_event_emit_size_total_as_option(),
+            max_num_deleted_move_object_ids_system_tx: config
+                .max_num_deleted_move_object_ids_system_tx(),
+            max_num_new_move_object_ids_system_tx: config.max_num_new_move_object_ids_system_tx(),
+            max_num_transferred_move_object_ids_system_tx: config
+                .max_num_transferred_move_object_ids_system_tx(),
+
+            object_runtime_max_num_cached_objects: config.object_runtime_max_num_cached_objects(),
+            object_runtime_max_num_cached_objects_system_tx: config
+                .object_runtime_max_num_cached_objects_system_tx(),
+            object_runtime_max_num_store_entries: config.object_runtime_max_num_store_entries(),
+            object_runtime_max_num_store_entries_system_tx: config
+                .object_runtime_max_num_store_entries_system_tx(),
+            loaded_child_object_format: config.loaded_child_object_format(),
+            loaded_child_object_format_type: config.loaded_child_object_format_type(),
+        }
+    }
 }
 
 #[derive(Tid)]
@@ -105,7 +147,7 @@ pub struct ObjectRuntime<'a> {
     // whether or not this TX is gas metered
     is_metered: bool,
 
-    pub(crate) protocol_config: &'a ProtocolConfig,
+    pub(crate) local_config: LocalProtocolConfig,
     pub(crate) metrics: Arc<LimitsMetrics>,
 }
 
@@ -132,13 +174,11 @@ impl<'a> ObjectRuntime<'a> {
         object_resolver: &'a dyn ChildObjectResolver,
         input_objects: BTreeMap<ObjectID, InputObject>,
         is_metered: bool,
-        protocol_config: &'a ProtocolConfig,
+        protocol_config: &ProtocolConfig,
         metrics: Arc<LimitsMetrics>,
-        epoch_id: EpochId,
     ) -> Self {
         let mut input_object_owners = BTreeMap::new();
         let mut root_version = BTreeMap::new();
-        let mut wrapped_object_containers = BTreeMap::new();
         for (id, input_object) in input_objects {
             let InputObject {
                 contained_uids,
@@ -149,34 +189,27 @@ impl<'a> ObjectRuntime<'a> {
             debug_assert!(contained_uids.contains(&id));
             for contained_uid in contained_uids {
                 root_version.insert(contained_uid, version);
-                if contained_uid != id {
-                    let prev = wrapped_object_containers.insert(contained_uid, id);
-                    debug_assert!(prev.is_none());
-                }
             }
         }
         Self {
             child_object_store: ChildObjectStore::new(
                 object_resolver,
                 root_version,
-                wrapped_object_containers,
                 is_metered,
-                protocol_config,
+                LocalProtocolConfig::new(protocol_config),
                 metrics.clone(),
-                epoch_id,
             ),
             test_inventories: TestInventories::new(),
             state: ObjectRuntimeState {
                 input_objects: input_object_owners,
                 new_ids: Set::new(),
                 deleted_ids: Set::new(),
-                transfers: IndexMap::new(),
+                transfers: LinkedHashMap::new(),
                 events: vec![],
                 total_events_size: 0,
-                received: IndexMap::new(),
             },
             is_metered,
-            protocol_config,
+            local_config: LocalProtocolConfig::new(protocol_config),
             metrics,
         }
     }
@@ -187,8 +220,8 @@ impl<'a> ObjectRuntime<'a> {
         if let LimitThresholdCrossed::Hard(_, lim) = check_limit_by_meter!(
             self.is_metered,
             self.state.new_ids.len(),
-            self.protocol_config.max_num_new_move_object_ids(),
-            self.protocol_config.max_num_new_move_object_ids_system_tx(),
+            self.local_config.max_num_new_move_object_ids,
+            self.local_config.max_num_new_move_object_ids_system_tx,
             self.metrics.excessive_new_move_object_ids
         ) {
             return Err(PartialVMError::new(StatusCode::MEMORY_LIMIT_EXCEEDED)
@@ -201,10 +234,9 @@ impl<'a> ObjectRuntime<'a> {
         // remove from deleted_ids for the case in dynamic fields where the Field object was deleted
         // and then re-added in a single transaction. In that case, we also skip adding it
         // to new_ids.
-        let was_present = self.state.deleted_ids.remove(&id);
-        if !was_present {
+        if self.state.deleted_ids.remove(&id).is_none() {
             // mark the id as new
-            self.state.new_ids.insert(id);
+            self.state.new_ids.insert(id, ());
         }
         Ok(())
     }
@@ -217,9 +249,8 @@ impl<'a> ObjectRuntime<'a> {
         if let LimitThresholdCrossed::Hard(_, lim) = check_limit_by_meter!(
             self.is_metered,
             self.state.deleted_ids.len(),
-            self.protocol_config.max_num_deleted_move_object_ids(),
-            self.protocol_config
-                .max_num_deleted_move_object_ids_system_tx(),
+            self.local_config.max_num_deleted_move_object_ids,
+            self.local_config.max_num_deleted_move_object_ids_system_tx,
             self.metrics.excessive_deleted_move_object_ids
         ) {
             return Err(PartialVMError::new(StatusCode::MEMORY_LIMIT_EXCEEDED)
@@ -229,9 +260,9 @@ impl<'a> ObjectRuntime<'a> {
                 ));
         };
 
-        let was_new = self.state.new_ids.remove(&id);
+        let was_new = self.state.new_ids.remove(&id).is_some();
         if !was_new {
-            self.state.deleted_ids.insert(id);
+            self.state.deleted_ids.insert(id, ());
         }
         Ok(())
     }
@@ -254,15 +285,14 @@ impl<'a> ObjectRuntime<'a> {
             SUI_SYSTEM_STATE_OBJECT_ID,
             SUI_CLOCK_OBJECT_ID,
             SUI_AUTHENTICATOR_STATE_OBJECT_ID,
-            SUI_RANDOMNESS_STATE_OBJECT_ID,
         ]
         .contains(&id);
-        let transfer_result = if self.state.new_ids.contains(&id) {
+        let transfer_result = if self.state.new_ids.contains_key(&id) {
             TransferResult::New
         } else if is_framework_obj {
             // framework objects are always created when they are transferred, but the id is
             // hard-coded so it is not yet in new_ids
-            self.state.new_ids.insert(id);
+            self.state.new_ids.insert(id, ());
             TransferResult::New
         } else if let Some(prev_owner) = self.state.input_objects.get(&id) {
             match (&owner, prev_owner) {
@@ -281,9 +311,9 @@ impl<'a> ObjectRuntime<'a> {
             // TODO: is this not redundant? Metered TX implies framework obj cannot be transferred
             self.is_metered && !is_framework_obj, // We have higher limits for unmetered transactions and framework obj
             self.state.transfers.len(),
-            self.protocol_config.max_num_transferred_move_object_ids(),
-            self.protocol_config
-                .max_num_transferred_move_object_ids_system_tx(),
+            self.local_config.max_num_transferred_move_object_ids,
+            self.local_config
+                .max_num_transferred_move_object_ids_system_tx,
             self.metrics.excessive_transferred_move_object_ids
         ) {
             return Err(PartialVMError::new(StatusCode::MEMORY_LIMIT_EXCEEDED)
@@ -298,8 +328,8 @@ impl<'a> ObjectRuntime<'a> {
     }
 
     pub fn emit_event(&mut self, ty: Type, tag: StructTag, event: Value) -> PartialVMResult<()> {
-        if self.state.events.len() >= (self.protocol_config.max_num_event_emit() as usize) {
-            return Err(max_event_error(self.protocol_config.max_num_event_emit()));
+        if self.state.events.len() >= (self.local_config.max_num_event_emit as usize) {
+            return Err(max_event_error(self.local_config.max_num_event_emit));
         }
         self.state.events.push((ty, tag, event));
         Ok(())
@@ -327,49 +357,12 @@ impl<'a> ObjectRuntime<'a> {
             .object_exists_and_has_type(parent, child, child_type)
     }
 
-    pub(super) fn receive_object(
-        &mut self,
-        parent: ObjectID,
-        child: ObjectID,
-        child_version: SequenceNumber,
-        child_ty: &Type,
-        child_layout: &R::MoveTypeLayout,
-        child_fully_annotated_layout: &MoveTypeLayout,
-        child_move_type: MoveObjectType,
-    ) -> PartialVMResult<Option<ObjectResult<Value>>> {
-        let Some((value, obj_meta)) = self.child_object_store.receive_object(
-            parent,
-            child,
-            child_version,
-            child_ty,
-            child_layout,
-            child_fully_annotated_layout,
-            child_move_type,
-        )?
-        else {
-            return Ok(None);
-        };
-        // NB: It is important that the object only be added to the received set after it has been
-        // fully authenticated and loaded.
-        if self.state.received.insert(child, obj_meta).is_some() {
-            // We should never hit this -- it means that we have received the same object twice which
-            // means we have a duplicated a receiving ticket somehow.
-            return Err(
-                PartialVMError::new(StatusCode::UNKNOWN_INVARIANT_VIOLATION_ERROR).with_message(format!(
-                    "Object {child} at version {child_version} already received. This can only happen \
-                    if multiple `Receiving` arguments exist for the same object in the transaction which is impossible."
-                )),
-            );
-        }
-        Ok(Some(value))
-    }
-
     pub(crate) fn get_or_fetch_child_object(
         &mut self,
         parent: ObjectID,
         child: ObjectID,
         child_ty: &Type,
-        child_layout: &R::MoveTypeLayout,
+        child_layout: &MoveTypeLayout,
         child_fully_annotated_layout: &MoveTypeLayout,
         child_move_type: MoveObjectType,
     ) -> PartialVMResult<ObjectResult<&mut GlobalValue>> {
@@ -405,7 +398,7 @@ impl<'a> ObjectRuntime<'a> {
     }
 
     pub fn finish(mut self) -> Result<RuntimeResults, ExecutionError> {
-        let loaded_child_objects = self.loaded_runtime_objects();
+        let loaded_child_objects = self.loaded_child_objects();
         let child_effects = self.child_object_store.take_effects();
         self.state.finish(loaded_child_objects, child_effects)
     }
@@ -416,14 +409,7 @@ impl<'a> ObjectRuntime<'a> {
         self.child_object_store.all_active_objects()
     }
 
-    pub fn loaded_runtime_objects(&self) -> BTreeMap<ObjectID, DynamicallyLoadedObjectMetadata> {
-        // The loaded child objects, and the received objects, should be disjoint. If they are not,
-        // this is an error since it could lead to incorrect transaction dependency computations.
-        debug_assert!(self
-            .child_object_store
-            .cached_objects()
-            .keys()
-            .all(|id| !self.state.received.contains_key(id)));
+    pub fn loaded_child_objects(&self) -> BTreeMap<ObjectID, LoadedChildObjectMetadata> {
         self.child_object_store
             .cached_objects()
             .iter()
@@ -431,29 +417,16 @@ impl<'a> ObjectRuntime<'a> {
                 obj_opt.as_ref().map(|obj| {
                     (
                         *id,
-                        DynamicallyLoadedObjectMetadata {
+                        LoadedChildObjectMetadata {
                             version: obj.version(),
                             digest: obj.digest(),
                             storage_rebate: obj.storage_rebate,
                             owner: obj.owner,
-                            previous_transaction: obj.previous_transaction,
                         },
                     )
                 })
             })
-            .chain(
-                self.state
-                    .received
-                    .iter()
-                    .map(|(id, meta)| (*id, meta.clone())),
-            )
             .collect()
-    }
-
-    /// A map from wrapped objects to the object that wraps them at the beginning of the
-    /// transaction.
-    pub fn wrapped_object_containers(&self) -> BTreeMap<ObjectID, ObjectID> {
-        self.child_object_store.wrapped_object_containers().clone()
     }
 }
 
@@ -477,7 +450,7 @@ impl ObjectRuntimeState {
     /// - Passes through user events
     pub(crate) fn finish(
         mut self,
-        loaded_child_objects: BTreeMap<ObjectID, DynamicallyLoadedObjectMetadata>,
+        loaded_child_objects: BTreeMap<ObjectID, LoadedChildObjectMetadata>,
         child_object_effects: BTreeMap<ObjectID, ChildObjectEffect>,
     ) -> Result<RuntimeResults, ExecutionError> {
         let mut loaded_child_objects: BTreeMap<_, _> = loaded_child_objects
@@ -507,7 +480,7 @@ impl ObjectRuntimeState {
                 // was modified, so mark it as mutated and transferred
                 Op::Modify(v) => {
                     debug_assert!(!self.transfers.contains_key(&child));
-                    debug_assert!(!self.new_ids.contains(&child));
+                    debug_assert!(!self.new_ids.contains_key(&child));
                     debug_assert!(loaded_child_objects.contains_key(&child));
                     self.transfers
                         .insert(child, (Owner::ObjectOwner(parent.into()), ty, v));
@@ -522,12 +495,12 @@ impl ObjectRuntimeState {
                 Op::Delete => {
                     // was transferred so not actually deleted
                     if self.transfers.contains_key(&child) {
-                        debug_assert!(!self.deleted_ids.contains(&child));
+                        debug_assert!(!self.deleted_ids.contains_key(&child));
                     }
                     // ID was deleted too was deleted so mark as deleted
-                    if self.deleted_ids.contains(&child) {
+                    if self.deleted_ids.contains_key(&child) {
                         debug_assert!(!self.transfers.contains_key(&child));
-                        debug_assert!(!self.new_ids.contains(&child));
+                        debug_assert!(!self.new_ids.contains_key(&child));
                     }
                 }
             }
@@ -539,9 +512,7 @@ impl ObjectRuntimeState {
             transfers,
             events: user_events,
             total_events_size: _,
-            received,
         } = self;
-
         // Check new owners from transfers, reports an error on cycles.
         // TODO can we have cycles in the new system?
         check_circular_ownership(transfers.iter().map(|(id, (owner, _, _))| (*id, *owner)))?;
@@ -551,7 +522,7 @@ impl ObjectRuntimeState {
         // mutation category in effects.
         // TODO: This could get error-prone quickly: what if we forgot to mark an object as modified? There may be a cleaner
         // sulution.
-        let written_objects: IndexMap<_, _> = transfers
+        let written_objects: LinkedHashMap<_, _> = transfers
             .into_iter()
             .map(|(id, (owner, type_, value))| {
                 if let Some(loaded_child) = loaded_child_objects.get_mut(&id) {
@@ -560,25 +531,9 @@ impl ObjectRuntimeState {
                 (id, (owner, type_, value))
             })
             .collect();
-        for deleted_id in &deleted_ids {
+        for deleted_id in deleted_ids.keys() {
             if let Some(loaded_child) = loaded_child_objects.get_mut(deleted_id) {
                 loaded_child.is_modified = true;
-            }
-        }
-
-        // Any received objects are viewed as modified. They had to be loaded in order to be
-        // received so they must be in the loaded_child_objects map otherwise it's an invariant
-        // violation.
-        for (received_object, _) in received.into_iter() {
-            match loaded_child_objects.get_mut(&received_object) {
-                Some(loaded_child) => {
-                    loaded_child.is_modified = true;
-                }
-                None => {
-                    return Err(ExecutionError::invariant_violation(format!(
-                        "Failed to find received UID {received_object} in loaded child objects."
-                    )))
-                }
             }
         }
 
@@ -661,19 +616,22 @@ fn get_all_uids_in_value(
             }
             _ => continue,
         };
-
-        let MoveStruct { type_, fields } = s;
-        if type_ == &UID::type_() {
-            let inner = match &fields[0].1 {
-                MoveValue::Struct(MoveStruct { fields, .. }) => fields,
-                v => return Err(format!("Unexpected UID layout. {v:?}")),
-            };
-            match &inner[0].1 {
-                MoveValue::Address(id) => acc.insert((*id).into()),
-                v => return Err(format!("Unexpected ID layout. {v:?}")),
-            };
-        } else {
-            stack.extend(fields.iter().map(|(_, v)| v));
+        match s {
+            MoveStruct::WithTypes { type_, fields } => {
+                if type_ == &UID::type_() {
+                    let inner = match &fields[0].1 {
+                        MoveValue::Struct(MoveStruct::WithTypes { fields, .. }) => fields,
+                        v => return Err(format!("Unexpected UID layout. {v:?}")),
+                    };
+                    match &inner[0].1 {
+                        MoveValue::Address(id) => acc.insert((*id).into()),
+                        v => return Err(format!("Unexpected ID layout. {v:?}")),
+                    };
+                } else {
+                    stack.extend(fields.iter().map(|(_, v)| v));
+                }
+            }
+            v => return Err(format!("Unexpected struct layout. {v:?}")),
         }
     }
     Ok(())
