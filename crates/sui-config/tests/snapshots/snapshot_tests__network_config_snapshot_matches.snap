@@ -1,0 +1,349 @@
+---
+source: crates/sui-config/tests/snapshot_tests.rs
+expression: network_config
+---
+validator_configs:
+  - protocol-key-pair-path: protocol-0.key
+    worker-key-pair-path: worker-0.key
+    account-key-pair-path: account-0.key
+    network-key-pair-path: network-0.key
+    db-path: /tmp/foo/
+    network-address: ""
+    json-rpc-address: "0.0.0.0:1"
+    metrics-address: "0.0.0.0:1"
+    admin-interface-port: 8888
+    consensus-config:
+      address: ""
+      db-path: /tmp/foo/
+      internal-worker-address: ""
+      timeout-secs: 60
+      narwhal-config:
+        header_num_of_batches_threshold: 32
+        max_header_num_of_batches: 1000
+        max_header_delay: 100ms
+        gc_depth: 50
+        sync_retry_delay: 5000ms
+        sync_retry_nodes: 3
+        batch_size: 500000
+        max_batch_delay: 100ms
+        block_synchronizer:
+          range_synchronize_timeout: 30000ms
+          certificates_synchronize_timeout: 30000ms
+          payload_synchronize_timeout: 30000ms
+          payload_availability_timeout: 30000ms
+          handler_certificate_deliver_timeout: 30000ms
+        consensus_api_grpc:
+          socket_addr: ""
+          get_collections_timeout: 5000ms
+          remove_collections_timeout: 5000ms
+        max_concurrent_requests: 500000
+        prometheus_metrics:
+          socket_addr: /ip4/127.0.0.1/tcp/1234
+        network_admin_server:
+          primary_network_admin_server_port: 5678
+          worker_network_admin_server_base_port: 8765
+    enable-event-processing: false
+    enable-checkpoint: false
+    checkpoints-per-epoch: ~
+    grpc-load-shed: ~
+    grpc-concurrency-limit: 20000000000
+    p2p-config:
+      listen-address: "0.0.0.0:1"
+    genesis:
+      genesis: "[fake genesis]"
+  - protocol-key-pair-path: protocol-1.key
+    worker-key-pair-path: worker-1.key
+    account-key-pair-path: account-1.key
+    network-key-pair-path: network-1.key
+    db-path: /tmp/foo/
+    network-address: ""
+    json-rpc-address: "0.0.0.0:1"
+    metrics-address: "0.0.0.0:1"
+    admin-interface-port: 8888
+    consensus-config:
+      address: ""
+      db-path: /tmp/foo/
+      internal-worker-address: ""
+      timeout-secs: 60
+      narwhal-config:
+        header_num_of_batches_threshold: 32
+        max_header_num_of_batches: 1000
+        max_header_delay: 100ms
+        gc_depth: 50
+        sync_retry_delay: 5000ms
+        sync_retry_nodes: 3
+        batch_size: 500000
+        max_batch_delay: 100ms
+        block_synchronizer:
+          range_synchronize_timeout: 30000ms
+          certificates_synchronize_timeout: 30000ms
+          payload_synchronize_timeout: 30000ms
+          payload_availability_timeout: 30000ms
+          handler_certificate_deliver_timeout: 30000ms
+        consensus_api_grpc:
+          socket_addr: ""
+          get_collections_timeout: 5000ms
+          remove_collections_timeout: 5000ms
+        max_concurrent_requests: 500000
+        prometheus_metrics:
+          socket_addr: /ip4/127.0.0.1/tcp/1234
+        network_admin_server:
+          primary_network_admin_server_port: 5678
+          worker_network_admin_server_base_port: 8765
+    enable-event-processing: false
+    enable-checkpoint: false
+    checkpoints-per-epoch: ~
+    grpc-load-shed: ~
+    grpc-concurrency-limit: 20000000000
+    p2p-config:
+      listen-address: "0.0.0.0:1"
+    genesis:
+      genesis: "[fake genesis]"
+  - protocol-key-pair-path: protocol-2.key
+    worker-key-pair-path: worker-2.key
+    account-key-pair-path: account-2.key
+    network-key-pair-path: network-2.key
+    db-path: /tmp/foo/
+    network-address: ""
+    json-rpc-address: "0.0.0.0:1"
+    metrics-address: "0.0.0.0:1"
+    admin-interface-port: 8888
+    consensus-config:
+      address: ""
+      db-path: /tmp/foo/
+      internal-worker-address: ""
+      timeout-secs: 60
+      narwhal-config:
+        header_num_of_batches_threshold: 32
+        max_header_num_of_batches: 1000
+        max_header_delay: 100ms
+        gc_depth: 50
+        sync_retry_delay: 5000ms
+        sync_retry_nodes: 3
+        batch_size: 500000
+        max_batch_delay: 100ms
+        block_synchronizer:
+          range_synchronize_timeout: 30000ms
+          certificates_synchronize_timeout: 30000ms
+          payload_synchronize_timeout: 30000ms
+          payload_availability_timeout: 30000ms
+          handler_certificate_deliver_timeout: 30000ms
+        consensus_api_grpc:
+          socket_addr: ""
+          get_collections_timeout: 5000ms
+          remove_collections_timeout: 5000ms
+        max_concurrent_requests: 500000
+        prometheus_metrics:
+          socket_addr: /ip4/127.0.0.1/tcp/1234
+        network_admin_server:
+          primary_network_admin_server_port: 5678
+          worker_network_admin_server_base_port: 8765
+    enable-event-processing: false
+    enable-checkpoint: false
+    checkpoints-per-epoch: ~
+    grpc-load-shed: ~
+    grpc-concurrency-limit: 20000000000
+    p2p-config:
+      listen-address: "0.0.0.0:1"
+    genesis:
+      genesis: "[fake genesis]"
+  - protocol-key-pair-path: protocol-3.key
+    worker-key-pair-path: worker-3.key
+    account-key-pair-path: account-3.key
+    network-key-pair-path: network-3.key
+    db-path: /tmp/foo/
+    network-address: ""
+    json-rpc-address: "0.0.0.0:1"
+    metrics-address: "0.0.0.0:1"
+    admin-interface-port: 8888
+    consensus-config:
+      address: ""
+      db-path: /tmp/foo/
+      internal-worker-address: ""
+      timeout-secs: 60
+      narwhal-config:
+        header_num_of_batches_threshold: 32
+        max_header_num_of_batches: 1000
+        max_header_delay: 100ms
+        gc_depth: 50
+        sync_retry_delay: 5000ms
+        sync_retry_nodes: 3
+        batch_size: 500000
+        max_batch_delay: 100ms
+        block_synchronizer:
+          range_synchronize_timeout: 30000ms
+          certificates_synchronize_timeout: 30000ms
+          payload_synchronize_timeout: 30000ms
+          payload_availability_timeout: 30000ms
+          handler_certificate_deliver_timeout: 30000ms
+        consensus_api_grpc:
+          socket_addr: ""
+          get_collections_timeout: 5000ms
+          remove_collections_timeout: 5000ms
+        max_concurrent_requests: 500000
+        prometheus_metrics:
+          socket_addr: /ip4/127.0.0.1/tcp/1234
+        network_admin_server:
+          primary_network_admin_server_port: 5678
+          worker_network_admin_server_base_port: 8765
+    enable-event-processing: false
+    enable-checkpoint: false
+    checkpoints-per-epoch: ~
+    grpc-load-shed: ~
+    grpc-concurrency-limit: 20000000000
+    p2p-config:
+      listen-address: "0.0.0.0:1"
+    genesis:
+      genesis: "[fake genesis]"
+  - protocol-key-pair-path: protocol-4.key
+    worker-key-pair-path: worker-4.key
+    account-key-pair-path: account-4.key
+    network-key-pair-path: network-4.key
+    db-path: /tmp/foo/
+    network-address: ""
+    json-rpc-address: "0.0.0.0:1"
+    metrics-address: "0.0.0.0:1"
+    admin-interface-port: 8888
+    consensus-config:
+      address: ""
+      db-path: /tmp/foo/
+      internal-worker-address: ""
+      timeout-secs: 60
+      narwhal-config:
+        header_num_of_batches_threshold: 32
+        max_header_num_of_batches: 1000
+        max_header_delay: 100ms
+        gc_depth: 50
+        sync_retry_delay: 5000ms
+        sync_retry_nodes: 3
+        batch_size: 500000
+        max_batch_delay: 100ms
+        block_synchronizer:
+          range_synchronize_timeout: 30000ms
+          certificates_synchronize_timeout: 30000ms
+          payload_synchronize_timeout: 30000ms
+          payload_availability_timeout: 30000ms
+          handler_certificate_deliver_timeout: 30000ms
+        consensus_api_grpc:
+          socket_addr: ""
+          get_collections_timeout: 5000ms
+          remove_collections_timeout: 5000ms
+        max_concurrent_requests: 500000
+        prometheus_metrics:
+          socket_addr: /ip4/127.0.0.1/tcp/1234
+        network_admin_server:
+          primary_network_admin_server_port: 5678
+          worker_network_admin_server_base_port: 8765
+    enable-event-processing: false
+    enable-checkpoint: false
+    checkpoints-per-epoch: ~
+    grpc-load-shed: ~
+    grpc-concurrency-limit: 20000000000
+    p2p-config:
+      listen-address: "0.0.0.0:1"
+    genesis:
+      genesis: "[fake genesis]"
+  - protocol-key-pair-path: protocol-5.key
+    worker-key-pair-path: worker-5.key
+    account-key-pair-path: account-5.key
+    network-key-pair-path: network-5.key
+    db-path: /tmp/foo/
+    network-address: ""
+    json-rpc-address: "0.0.0.0:1"
+    metrics-address: "0.0.0.0:1"
+    admin-interface-port: 8888
+    consensus-config:
+      address: ""
+      db-path: /tmp/foo/
+      internal-worker-address: ""
+      timeout-secs: 60
+      narwhal-config:
+        header_num_of_batches_threshold: 32
+        max_header_num_of_batches: 1000
+        max_header_delay: 100ms
+        gc_depth: 50
+        sync_retry_delay: 5000ms
+        sync_retry_nodes: 3
+        batch_size: 500000
+        max_batch_delay: 100ms
+        block_synchronizer:
+          range_synchronize_timeout: 30000ms
+          certificates_synchronize_timeout: 30000ms
+          payload_synchronize_timeout: 30000ms
+          payload_availability_timeout: 30000ms
+          handler_certificate_deliver_timeout: 30000ms
+        consensus_api_grpc:
+          socket_addr: ""
+          get_collections_timeout: 5000ms
+          remove_collections_timeout: 5000ms
+        max_concurrent_requests: 500000
+        prometheus_metrics:
+          socket_addr: /ip4/127.0.0.1/tcp/1234
+        network_admin_server:
+          primary_network_admin_server_port: 5678
+          worker_network_admin_server_base_port: 8765
+    enable-event-processing: false
+    enable-checkpoint: false
+    checkpoints-per-epoch: ~
+    grpc-load-shed: ~
+    grpc-concurrency-limit: 20000000000
+    p2p-config:
+      listen-address: "0.0.0.0:1"
+    genesis:
+      genesis: "[fake genesis]"
+  - protocol-key-pair-path: protocol-6.key
+    worker-key-pair-path: worker-6.key
+    account-key-pair-path: account-6.key
+    network-key-pair-path: network-6.key
+    db-path: /tmp/foo/
+    network-address: ""
+    json-rpc-address: "0.0.0.0:1"
+    metrics-address: "0.0.0.0:1"
+    admin-interface-port: 8888
+    consensus-config:
+      address: ""
+      db-path: /tmp/foo/
+      internal-worker-address: ""
+      timeout-secs: 60
+      narwhal-config:
+        header_num_of_batches_threshold: 32
+        max_header_num_of_batches: 1000
+        max_header_delay: 100ms
+        gc_depth: 50
+        sync_retry_delay: 5000ms
+        sync_retry_nodes: 3
+        batch_size: 500000
+        max_batch_delay: 100ms
+        block_synchronizer:
+          range_synchronize_timeout: 30000ms
+          certificates_synchronize_timeout: 30000ms
+          payload_synchronize_timeout: 30000ms
+          payload_availability_timeout: 30000ms
+          handler_certificate_deliver_timeout: 30000ms
+        consensus_api_grpc:
+          socket_addr: ""
+          get_collections_timeout: 5000ms
+          remove_collections_timeout: 5000ms
+        max_concurrent_requests: 500000
+        prometheus_metrics:
+          socket_addr: /ip4/127.0.0.1/tcp/1234
+        network_admin_server:
+          primary_network_admin_server_port: 5678
+          worker_network_admin_server_base_port: 8765
+    enable-event-processing: false
+    enable-checkpoint: false
+    checkpoints-per-epoch: ~
+    grpc-load-shed: ~
+    grpc-concurrency-limit: 20000000000
+    p2p-config:
+      listen-address: "0.0.0.0:1"
+    genesis:
+      genesis: "[fake genesis]"
+account_keys:
+  - 10wECHkYvXqL5/CY6WhjbfFPotZb5tjEbpmumqbRxul6/9LaD95rkXfiBEoGJR8u81q9fCiP+O7nXOsprVTPUQ==
+  - ZTWBfKEmFOyYM9oBU9dNfREBuAU5fm2OBhg/vPtI00ee91o4Td1upRqxdMC/5khQi58pBG83ZvbMUnI2shFOvw==
+  - +0LdRe35y6TgXPz6qcArpf0T8/Hh7zkjJL0yT19jbjdWZVO3wT0uCs8sHK38p5+DiwNKSfKm/iqb6R7vmIsYNg==
+  - cHifntmjxd4QLaC71WRMoOeCpvicyDJMbTKRuo2v3R9UjI8DXP6RwO6c5B70OPjZEdiV0XB+RVfcjX6/JKfZeg==
+  - mTzV/JVz4RdheOnQVFF3xuCPFF4AYAPyShHQCUizJX9pHbCeXB5wKAz9LCwtuoC4PCML0v4vko2/c16HlmPrbQ==
+genesis: "[fake genesis]"
+
