@@ -1,0 +1,19 @@
+// Copyright (c) 2022, Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+//# publish
+module 0x0.m {
+    import 0x2.object;
+
+    struct Foo has key {
+        info: object.Info,
+    }
+
+    foo(f: Self.Foo): Self.Foo {
+        let info: object.Info;
+        label l0:
+        Foo { info } = move(f);
+        return Foo { info: move(info) };
+    }
+
+}
