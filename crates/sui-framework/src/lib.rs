@@ -1,0 +1,218 @@
+// Copyright (c) Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+use fastcrypto::encoding::{Base64, Encoding};
+use move_binary_format::CompiledModule;
+use move_cli::base::test::UnitTestResult;
+use move_core_types::gas_algebra::InternalGas;
+use move_package::BuildConfig as MoveBuildConfig;
+use move_unit_test::{extensions::set_extension_hook, UnitTestingConfig};
+use move_vm_runtime::native_extensions::NativeContextExtensions;
+use natives::object_runtime::ObjectRuntime;
+use once_cell::sync::Lazy;
+use std::{collections::BTreeMap, path::Path};
+use sui_framework_build::compiled_package::{BuildConfig, CompiledPackage};
+use sui_types::{
+    base_types::TransactionDigest, error::{SuiResult, SuiError}, in_memory_storage::InMemoryStorage,
+    messages::InputObjects, temporary_store::TemporaryStore, MOVE_STDLIB_ADDRESS,
+    SUI_FRAMEWORK_ADDRESS,
+};
+
+pub mod cost_calib;
+pub mod natives;
+
+// Move unit tests will halt after executing this many steps. This is a protection to avoid divergence
+const MAX_UNIT_TEST_INSTRUCTIONS: u64 = 100_000;
+
+static SUI_FRAMEWORK: Lazy<Vec<CompiledModule>> = Lazy::new(|| {
+    const SUI_FRAMEWORK_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sui-framework"));
+
+    let serialized_modules: Vec<Vec<u8>> = bcs::from_bytes(SUI_FRAMEWORK_BYTES).unwrap();
+
+    serialized_modules
+        .into_iter()
+        .map(|module| CompiledModule::deserialize(&module).unwrap())
+        .collect()
+});
+
+static MOVE_STDLIB: Lazy<Vec<CompiledModule>> = Lazy::new(|| {
+    const MOVE_STDLIB_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/move-stdlib"));
+
+    let serialized_modules: Vec<Vec<u8>> = bcs::from_bytes(MOVE_STDLIB_BYTES).unwrap();
+
+    serialized_modules
+        .into_iter()
+        .map(|module| CompiledModule::deserialize(&module).unwrap())
+        .collect()
+});
+
+static SET_EXTENSION_HOOK: Lazy<()> =
+    Lazy::new(|| set_extension_hook(Box::new(new_testing_object_runtime)));
+
+fn new_testing_object_runtime(ext: &mut NativeContextExtensions) {
+    let store = InMemoryStorage::new(vec![]);
+    let state_view = TemporaryStore::new(
+        store,
+        InputObjects::new(vec![]),
+        TransactionDigest::random(),
+    );
+    ext.add(ObjectRuntime::new(Box::new(state_view), BTreeMap::new()))
+}
+
+pub fn get_sui_framework() -> Vec<CompiledModule> {
+    Lazy::force(&SUI_FRAMEWORK).to_owned()
+}
+
+pub fn get_move_stdlib() -> Vec<CompiledModule> {
+    Lazy::force(&MOVE_STDLIB).to_owned()
+}
+
+pub const DEFAULT_FRAMEWORK_PATH: &str = env!("CARGO_MANIFEST_DIR");
+
+// TODO: remove these in favor of new costs
+pub fn legacy_test_cost() -> InternalGas {
+    InternalGas::new(0)
+}
+
+pub fn legacy_emit_cost() -> InternalGas {
+    InternalGas::new(52)
+}
+
+pub fn legacy_create_signer_cost() -> InternalGas {
+    InternalGas::new(24)
+}
+
+pub fn legacy_empty_cost() -> InternalGas {
+    InternalGas::new(84)
+}
+
+pub fn legacy_length_cost() -> InternalGas {
+    InternalGas::new(98)
+}
+
+/// Given a `path` and a `build_config`, build the package in that path and return the compiled modules as base64.
+/// This is useful for when publishing via JSON
+pub fn build_move_package_to_base64(
+    path: &Path,
+    build_config: BuildConfig,
+) -> Result<Vec<String>, SuiError> {
+    build_move_package_to_bytes(path, build_config)
+        .map(|mods| mods.iter().map(Base64::encode).collect::<Vec<_>>())
+}
+
+/// Given a `path` and a `build_config`, build the package in that path and return the compiled modules as Vec<Vec<u8>>.
+/// This is useful for when publishing
+pub fn build_move_package_to_bytes(
+    path: &Path,
+    build_config: BuildConfig,
+) -> Result<Vec<Vec<u8>>, SuiError> {
+    build_move_package(path, build_config).map(|compiled_pkg| {
+        compiled_pkg.get_modules()
+            .map(|m| {
+                let mut bytes = Vec::new();
+                m.serialize(&mut bytes).unwrap();
+                bytes
+            })
+            .collect::<Vec<_>>()
+    })
+}
+
+/// `build_move_package_to_bytes()`, for when you already have a CompiledPackage
+pub fn compiled_move_package_to_bytes(package: &CompiledPackage) -> Vec<Vec<u8>> {
+    package
+        .get_modules()
+        .map(|m| {
+            let mut bytes = Vec::new();
+            m.serialize(&mut bytes).unwrap();
+            bytes
+        })
+        .collect()
+}
+
+/// This function returns a result of UnitTestResult. The outer result indicates whether it
+/// successfully started running the test, and the inner result indicatests whether all tests pass.
+pub fn run_move_unit_tests(
+    path: &Path,
+    build_config: MoveBuildConfig,
+    config: Option<UnitTestingConfig>,
+    compute_coverage: bool,
+) -> anyhow::Result<UnitTestResult> {
+    // bind the extension hook if it has not yet been done
+    Lazy::force(&SET_EXTENSION_HOOK);
+
+    let config = config
+        .unwrap_or_else(|| UnitTestingConfig::default_with_bound(Some(MAX_UNIT_TEST_INSTRUCTIONS)));
+
+    move_cli::base::test::run_move_unit_tests(
+        path,
+        build_config,
+        UnitTestingConfig {
+            report_stacktrace_on_abort: true,
+            ..config
+        },
+        natives::all_natives(MOVE_STDLIB_ADDRESS, SUI_FRAMEWORK_ADDRESS),
+        compute_coverage,
+        &mut std::io::stdout(),
+    )
+}
+
+/// Wrapper of the build command that verifies the framework version. Should eventually be removed once we can
+/// do this in the obvious way (via version checks)
+pub fn build_move_package(path: &Path, config: BuildConfig) -> SuiResult<CompiledPackage> {
+    let pkg = config.build(path.to_path_buf())?;
+    pkg.verify_framework_version(get_sui_framework(), get_move_stdlib())?;
+    Ok(pkg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    #[cfg_attr(msim, ignore)]
+    fn run_framework_move_unit_tests() {
+        get_sui_framework();
+        get_move_stdlib();
+        let path = PathBuf::from(DEFAULT_FRAMEWORK_PATH);
+        BuildConfig::default().build(path.clone()).unwrap();
+        check_move_unit_tests(&path);
+    }
+
+    #[test]
+    #[cfg_attr(msim, ignore)]
+    fn run_examples_move_unit_tests() {
+        let examples = vec![
+            "basics",
+            "defi",
+            "fungible_tokens",
+            "games",
+            "move_tutorial",
+            "nfts",
+            "objects_tutorial",
+        ];
+        for example in examples {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../sui_programmability/examples")
+                .join(example);
+            BuildConfig::default().build(path.clone()).unwrap();
+            check_move_unit_tests(&path);
+        }
+    }
+
+    #[test]
+    #[cfg_attr(msim, ignore)]
+    fn run_book_examples_move_unit_tests() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../doc/book/examples");
+
+        BuildConfig::default().build(path.clone()).unwrap();
+        check_move_unit_tests(&path);
+    }
+
+    fn check_move_unit_tests(path: &Path) {
+        assert_eq!(
+            run_move_unit_tests(path, MoveBuildConfig::default(), None, false).unwrap(),
+            UnitTestResult::Success
+        );
+    }
+}
