@@ -1,0 +1,27 @@
+processed 7 tasks
+
+task 1 'publish'. lines 8-35:
+created: object(1,0)
+mutated: object(0,0)
+gas summary: computation_cost: 1000000, storage_cost: 6125600,  storage_rebate: 0, non_refundable_storage_fee: 0
+
+task 2 'run'. lines 36-38:
+created: object(2,0)
+mutated: object(0,0)
+gas summary: computation_cost: 1000000, storage_cost: 2219200,  storage_rebate: 978120, non_refundable_storage_fee: 9880
+
+task 3 'run'. lines 39-41:
+Error: Transaction Effects Status: Insufficient Gas.
+Execution Error: ExecutionError: ExecutionError { inner: ExecutionErrorInner { kind: InsufficientGas, source: Some(VMError { major_status: OUT_OF_GAS, sub_status: None, message: None, exec_state: Some(ExecutionState { stack_trace: [(Some(ModuleId { address: sui, name: Identifier("object") }), FunctionDefinitionIndex(10), 1), (Some(ModuleId { address: Test, name: Identifier("M1") }), FunctionDefinitionIndex(0), 8)] }), location: Module(ModuleId { address: sui, name: Identifier("tx_context") }), indices: [], offsets: [(FunctionDefinitionIndex(3), 6)] }), command: Some(0) } }
+
+task 4 'run'. lines 42-44:
+Error: Transaction Effects Status: Insufficient Gas.
+Execution Error: ExecutionError: ExecutionError { inner: ExecutionErrorInner { kind: InsufficientGas, source: Some(VMError { major_status: OUT_OF_GAS, sub_status: None, message: None, exec_state: Some(ExecutionState { stack_trace: [(Some(ModuleId { address: sui, name: Identifier("object") }), FunctionDefinitionIndex(10), 1), (Some(ModuleId { address: Test, name: Identifier("M1") }), FunctionDefinitionIndex(0), 8)] }), location: Module(ModuleId { address: sui, name: Identifier("tx_context") }), indices: [], offsets: [(FunctionDefinitionIndex(3), 6)] }), command: Some(0) } }
+
+task 5 'run'. lines 45-47:
+Error: Transaction Effects Status: Insufficient Gas.
+Execution Error: ExecutionError: ExecutionError { inner: ExecutionErrorInner { kind: InsufficientGas, source: Some(VMError { major_status: OUT_OF_GAS, sub_status: None, message: None, exec_state: Some(ExecutionState { stack_trace: [(Some(ModuleId { address: sui, name: Identifier("object") }), FunctionDefinitionIndex(10), 1), (Some(ModuleId { address: Test, name: Identifier("M1") }), FunctionDefinitionIndex(0), 8)] }), location: Module(ModuleId { address: sui, name: Identifier("tx_context") }), indices: [], offsets: [(FunctionDefinitionIndex(3), 6)] }), command: Some(0) } }
+
+task 6 'run'. lines 48-48:
+Error: Transaction Effects Status: Insufficient Gas.
+Execution Error: ExecutionError: ExecutionError { inner: ExecutionErrorInner { kind: InsufficientGas, source: Some(VMError { major_status: OUT_OF_GAS, sub_status: None, message: None, exec_state: Some(ExecutionState { stack_trace: [(Some(ModuleId { address: sui, name: Identifier("object") }), FunctionDefinitionIndex(10), 1), (Some(ModuleId { address: Test, name: Identifier("M1") }), FunctionDefinitionIndex(0), 8)] }), location: Module(ModuleId { address: sui, name: Identifier("tx_context") }), indices: [], offsets: [(FunctionDefinitionIndex(3), 6)] }), command: Some(0) } }
