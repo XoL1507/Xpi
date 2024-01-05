@@ -1,0 +1,21 @@
+version: '3'
+
+services:
+  ui:
+    build:
+      context: ./ui
+    ports:
+      - 3000:3000
+    volumes:
+      - type: bind
+        source: ./ui
+        target: /app
+  api:
+    build:
+      context: ./api
+    ports:
+      - 8000:8000
+    volumes:
+      - type: bind
+        source: ./api
+        target: /app
