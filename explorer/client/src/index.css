@@ -1,0 +1,41 @@
+@import 'vanilla-cookieconsent/dist/cookieconsent.css';
+@font-face {
+    font-family: Inter;
+    src: url('./assets/Fonts/Inter-VariableFont_slnt,wght.ttf')
+        format('truetype-variations');
+    font-weight: 1 999;
+}
+
+@font-face {
+    font-family: 'Space Mono';
+    src: url('./assets/Fonts/SpaceMono-Regular.ttf') format('truetype');
+}
+
+body {
+    @apply m-0 text-offblack;
+}
+
+/* Improves scrollbar look on Chromium browsers */
+
+body::-webkit-scrollbar {
+    width: 10px;
+}
+
+body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+body::-webkit-scrollbar-thumb {
+    background: #898d93;
+    border-radius: 5px;
+}
+
+body::-webkit-scrollbar-thumb:hover {
+    background: #4e555d;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    outline: none;
+}
