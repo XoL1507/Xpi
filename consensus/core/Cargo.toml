@@ -1,0 +1,17 @@
+[package]
+name = "consensus-core"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Mysten Labs <build@mystenlabs.com>"]
+edition = "2021"
+publish = false
+
+[dependencies]
+base64.workspace = true
+bcs.workspace = true
+fastcrypto.workspace = true
+serde.workspace = true
+
+consensus-config.workspace = true
+
+workspace-hack.workspace = true
