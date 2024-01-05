@@ -1,0 +1,8 @@
+# Best-effort syntax highlighting for Move: just use Rust
+*.move linguist-language=Rust
+*.mvir linguist-language=Rust
+
+# These files are used in "porcelain" file comparison,
+# we don't want an equality to fail because of line endings.
+crates/sui-core/tests/staged/sui.yaml text eol=lf
+crates/sui-open-rpc/spec/openrpc.json text eol=lf
