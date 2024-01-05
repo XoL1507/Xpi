@@ -1,0 +1,35 @@
+{
+  "name": "@mysten/wallet-adapter-all-wallets",
+  "version": "0.3.8",
+  "description": "Module exporting all integrated wallets for Sui Wallet Adapter",
+  "license": "Apache-2.0",
+  "author": "Mysten Labs <build@mystenlabs.com>",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "clean": "rm -rf tsconfig.tsbuildinfo ./dist",
+    "build": "vite build",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "@mysten/wallet-adapter-unsafe-burner": "workspace:*",
+    "@mysten/wallet-adapter-wallet-standard": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.4",
+    "vite": "^4.0.4",
+    "vite-plugin-dts": "^1.7.1"
+  }
+}
