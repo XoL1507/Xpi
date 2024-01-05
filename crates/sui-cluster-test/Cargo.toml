@@ -1,0 +1,25 @@
+[package]
+name = "sui-cluster-test"
+version = "0.1.0"
+authors = ["Mysten Labs <build@mystenlabs.com>"]
+license = "Apache-2.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+futures = "0.3.21"
+serde_json = "1.0.80"
+tempfile = "3.3.0"
+tokio = { version = "1.17.0", features = ["full"] }
+tracing = { version = "0.1.35", features = ["log"] }
+clap = { version = "3.1.14", features = ["derive"] }
+reqwest = { version = "0.11.11", features = ["blocking", "json"] }
+telemetry-subscribers = { git = "https://github.com/MystenLabs/mysten-infra", rev = "40dae350a699f59f2e296152e02c78765db34e68" }
+
+sui-faucet = { path = "../sui-faucet" }
+sui = { path = "../sui" }
+sui-json-rpc-api = { path = "../sui-json-rpc-api" }
+sui-types = { path = "../sui-types" }
+sui-json = { path = "../sui-json" }
+sui-config = { path = "../sui-config" }
+workspace-hack = { path = "../workspace-hack"}
