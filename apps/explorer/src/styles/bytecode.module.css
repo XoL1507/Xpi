@@ -1,0 +1,3 @@
+div.code {
+    @apply overflow-auto whitespace-pre border-solid border-gray-45 p-2 text-sm;
+}
