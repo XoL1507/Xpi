@@ -1,0 +1,12 @@
+{
+    "testbed_id": "alberto-sui",
+    "cloud_provider": "aws",
+    "token_file": "/Users/alberto/.aws/credentials",
+    "ssh_private_key_file": "/Users/alberto/.ssh/aws",
+    "regions": ["us-east-1", "us-west-2"],
+    "specs": "m5d.8xlarge",
+    "repository": {
+        "url": "http://github.com/mystenlabs/sui",
+        "commit": "vanity"
+    }
+}
