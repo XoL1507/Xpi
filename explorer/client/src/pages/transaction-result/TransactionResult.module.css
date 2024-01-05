@@ -1,0 +1,89 @@
+.txlinks {
+    @apply grid grid-cols-1 md:grid-cols-2 gap-1;
+}
+
+.txgridcomponent {
+    @apply block md:grid grid-cols-1 md:grid-cols-1 gap-0 md:gap-3;
+}
+
+.txcomponent {
+    @apply pt-4 pb-4;
+}
+
+.txgridcolspan2 {
+    grid-column: span 2;
+    border-right: 1px solid #f0f1f2;
+    @apply border-0 md:border-r-[1px] md:border-[#f0f1f2];
+}
+
+.txgridcolspan3 {
+    grid-column: span 3;
+}
+
+.txsender {
+    @apply col-start-2 md:col-start-3 md:row-start-1 md:row-end-2 mt-1;
+}
+
+.itemviewtitle,
+.txtitle {
+    @apply text-sui-grey-100 font-[500] text-lg  mt-5 mb-0;
+}
+
+.itemviewtitle {
+    border-bottom: 1px solid #f0f1f2;
+    @apply border-b-[1px] border-[#f0f1f2] pb-1 pt-1;
+}
+
+.itemviewcontent {
+    @apply mb-2 mt-2;
+}
+
+.itemviewcontent .itemviewcontentitem {
+    @apply grid gap-1 text-[14px] md:text-[15px] text-gray-500;
+
+    grid-template-columns: 1fr 2fr;
+}
+
+.itemviewcontentvalue {
+    @apply text-sm pt-2 pb-2 text-gray-800;
+}
+
+.itemviewcontent .itemviewcontentitem a,
+.itemviewcontent .itemviewcontentitem span {
+    @apply break-all font-mono text-sm text-sui-dark;
+}
+
+.itemviewcontentlabel {
+    @apply pt-2 pb-2;
+}
+
+@media (min-width: 40em) {
+    .itemviewcontent .itemviewcontentitem {
+        grid-template-columns: 1fr 5fr;
+    }
+
+    .txmodule section:nth-child(2n) {
+        border-left: 1px solid #f0f1f2;
+        border-right: 1px solid #f0f1f2;
+    }
+}
+
+.singleitem {
+    @apply block !important;
+}
+
+.mono {
+    @apply font-mono text-sm break-all;
+}
+
+.txdetailsbg ul {
+    @apply mt-5 mb-2;
+
+    border-top: none !important;
+}
+
+.packagedetails .itemviewtitle {
+    @apply mt-0;
+
+    border-bottom: none;
+}
