@@ -1,0 +1,18 @@
+// Copyright (c) 2022, Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+//# publish
+module 0x0.m {
+    import 0x2.object;
+
+    struct Foo<T> has key {
+        info: object.Info,
+    }
+
+    foo(f: Self.Foo<u64>) {
+        label l0:
+        _ = &mut (&mut f).Foo<u64>::info;
+        abort 0;
+    }
+
+}
