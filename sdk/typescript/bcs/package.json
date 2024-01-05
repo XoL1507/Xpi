@@ -1,0 +1,50 @@
+{
+  "name": "@mysten/bcs",
+  "version": "0.2.0",
+  "description": "BCS - Canonical Binary Serialization implementation for JavaScript",
+  "author": "Mysten Labs <build@mystenlabs.com>",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "source": "src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "pnpm build:types && tsup ./src/index.ts --format esm,cjs --sourcemap",
+    "build:types": "tsc --declaration --emitDeclarationOnly",
+    "test": "vitest",
+    "coverage": "vitest run --coverage",
+    "prepare": "pnpm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mystenlabs/sui.git"
+  },
+  "keywords": [
+    "bcs",
+    "libra",
+    "diem",
+    "move",
+    "serialization",
+    "serde"
+  ],
+  "bugs": {
+    "url": "https://github.com/mystenlabs/sui/issues"
+  },
+  "homepage": "https://github.com/mystenlabs/sui#readme",
+  "dependencies": {
+    "bn.js": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.1.0",
+    "@vitest/coverage-c8": "^0.22.1",
+    "tsup": "^6.2.2",
+    "typescript": "^4.7.4",
+    "vitest": "^0.22.1"
+  }
+}
