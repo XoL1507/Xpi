@@ -1,0 +1,20 @@
+[package]
+name = "sui-proc-macros"
+version = "0.7.0"
+authors = ["Mysten Labs <build@mystenlabs.com>"]
+license = "Apache-2.0"
+publish = false
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1"
+syn = { version = "2", features = ["full", "fold", "extra-traits"] }
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
+proc-macro2 = "1"
+sui-enum-compat-util = { path = "../sui-enum-compat-util" }
+
+[target.'cfg(msim)'.dependencies]
+msim-macros = { git = "https://github.com/MystenLabs/mysten-sim.git", rev = "f2c31421e273eca7e97c563c7e07b81b5afa2d3a", package = "msim-macros" }
