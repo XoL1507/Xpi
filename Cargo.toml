@@ -1,0 +1,49 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sui",
+    "crates/sui-adapter",
+    "crates/sui-adapter-transactional-tests",
+    "crates/sui-benchmark",
+    "crates/sui-cluster-test",
+    "crates/sui-config",
+    "crates/sui-core",
+    "crates/sui-cost",
+    "crates/sui-cost-constants",
+    "crates/sui-faucet",
+    "crates/sui-framework",
+    "crates/sui-framework-build",
+    "crates/sui-gateway",
+    "crates/sui-json",
+    "crates/sui-json-rpc",
+    "crates/sui-json-rpc-types",
+    "crates/sui-network",
+    "crates/sui-node",
+    "crates/sui-open-rpc",
+    "crates/sui-open-rpc-macros",
+    "crates/sui-quorum-driver",
+    "crates/sui-sdk",
+    "crates/sui-storage",
+    "crates/sui-swarm",
+    "crates/sui-telemetry",
+    "crates/sui-test-validator",
+    "crates/sui-tool",
+    "crates/sui-transactional-test-runner",
+    "crates/sui-types",
+    "crates/sui-verifier",
+    "crates/sui-verifier-transactional-tests",
+    "crates/test-utils",
+    "crates/workspace-hack",
+    "crates/x",
+]
+
+[profile.release]
+# The following two lines add minimal symbol information, which helps certain profilers like Bytehound
+# without significantly increasing binary size
+debug = true
+strip = 'debuginfo'
+
+[profile.bench]
+# Do not strip any debug info.  This helps the widest set of profiling tools
+debug = true
+strip = 'none'

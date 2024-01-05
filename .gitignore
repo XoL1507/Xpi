@@ -1,0 +1,31 @@
+# IDE
+**/.history/
+**/.vscode/
+
+# OSX
+.DS_Store
+
+# Rust build directory
+**/target
+.pre-commit*
+
+# Move build directory
+build
+storage/
+
+# Thumbnails
+._*
+
+# Emacs
+\#*\#
+.\#*
+
+# Python
+.pyc
+
+# Node.js
+node_modules
+
+# logs
+wallet.log.*
+sui.log.*
