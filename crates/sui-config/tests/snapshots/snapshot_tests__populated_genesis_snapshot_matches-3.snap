@@ -1,0 +1,11 @@
+---
+source: crates/sui-config/tests/snapshot_tests.rs
+expression: genesis.narwhal_committee()
+---
+authorities:
+  ucbuFjDvPnERRKZI2wa7sihPcnTPvuU//O5QPMGkkgA=:
+    stake: 1
+    primary_address: ""
+    network_key: ucbuFjDvPnERRKZI2wa7sihPcnTPvuU//O5QPMGkkgA=
+epoch: 0
+

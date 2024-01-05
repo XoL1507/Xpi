@@ -1,0 +1,17 @@
+---
+source: crates/sui-config/tests/snapshot_tests.rs
+expression: genesis.validator_set()
+---
+- name: "0"
+  account-key: ALnG7hYw7z5xEUSmSNsGu7IoT3J0z77lP/zuUDzBpJIA
+  protocol-key: ucbuFjDvPnERRKZI2wa7sihPcnTPvuU//O5QPMGkkgA=
+  worker-key: ucbuFjDvPnERRKZI2wa7sihPcnTPvuU//O5QPMGkkgA=
+  network-key: ucbuFjDvPnERRKZI2wa7sihPcnTPvuU//O5QPMGkkgA=
+  stake: 1
+  delegation: 0
+  gas-price: 1
+  network-address: ""
+  narwhal-primary-address: ""
+  narwhal-worker-address: ""
+  narwhal-consensus-address: ""
+
