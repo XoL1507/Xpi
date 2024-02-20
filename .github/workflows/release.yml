@@ -194,7 +194,7 @@ jobs:
 
       # Download all artifacts from the previous job
       - name: Download all artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
 
       - name: Fetch Ubuntu x86_64 Binary and Compute SHA256
         shell: bash
