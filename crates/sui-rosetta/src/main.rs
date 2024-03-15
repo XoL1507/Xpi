@@ -17,7 +17,7 @@ use tracing::info;
 use tracing::log::warn;
 
 use sui_config::{sui_config_dir, Config, NodeConfig, SUI_FULLNODE_CONFIG, SUI_KEYSTORE_FILENAME};
-use sui_node::SuiNode;
+use sui_node::{metrics, SuiNode};
 use sui_rosetta::types::{CurveType, PrefundedAccount, SuiEnv};
 use sui_rosetta::{RosettaOfflineServer, RosettaOnlineServer, SUI};
 use sui_sdk::{SuiClient, SuiClientBuilder};
@@ -166,8 +166,7 @@ impl RosettaServerCommand {
                 config.db_path = data_path.join("sui_db");
                 info!("Overriding Sui db path to : {:?}", config.db_path);
 
-                let registry_service =
-                    mysten_metrics::start_prometheus_server(config.metrics_address);
+                let registry_service = metrics::start_prometheus_server(config.metrics_address);
                 // Staring a full node for the rosetta server.
                 let rpc_address = format!("http://127.0.0.1:{}", config.json_rpc_address.port());
                 let _node = SuiNode::start(&config, registry_service, None).await?;
@@ -248,10 +247,10 @@ fn test_read_keystore() {
     let path = temp_dir.path().join("sui.keystore");
     let mut ks = Keystore::from(FileBasedKeystore::new(&path).unwrap());
     let key1 = ks
-        .generate_and_add_new_key(SignatureScheme::ED25519, None, None, None)
+        .generate_and_add_new_key(SignatureScheme::ED25519, None, None)
         .unwrap();
     let key2 = ks
-        .generate_and_add_new_key(SignatureScheme::Secp256k1, None, None, None)
+        .generate_and_add_new_key(SignatureScheme::Secp256k1, None, None)
         .unwrap();
 
     let accounts = read_prefunded_account(&path).unwrap();

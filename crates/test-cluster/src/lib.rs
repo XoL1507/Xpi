@@ -1,25 +1,23 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use futures::{future::join_all, StreamExt};
+use futures::future::join_all;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::ws_client::WsClient;
 use jsonrpsee::ws_client::WsClientBuilder;
 use rand::{distributions::*, rngs::OsRng, seq::SliceRandom};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use sui_config::node::{DBCheckpointConfig, OverloadThresholdConfig};
+use sui_config::node::DBCheckpointConfig;
 use sui_config::{Config, SUI_CLIENT_CONFIG, SUI_NETWORK_CONFIG};
 use sui_config::{NodeConfig, PersistedConfig, SUI_KEYSTORE_FILENAME};
 use sui_core::authority_aggregator::AuthorityAggregator;
 use sui_core::authority_client::NetworkAuthorityClient;
-use sui_json_rpc_types::{
-    SuiTransactionBlockEffectsAPI, SuiTransactionBlockResponse, TransactionFilter,
-};
+use sui_json_rpc_types::SuiTransactionBlockResponse;
 use sui_keys::keystore::{AccountKeystore, FileBasedKeystore, Keystore};
 use sui_node::SuiNodeHandle;
 use sui_protocol_config::{ProtocolVersion, SupportedProtocolVersions};
@@ -36,9 +34,7 @@ use sui_swarm_config::network_config_builder::{
 };
 use sui_swarm_config::node_config_builder::{FullnodeConfigBuilder, ValidatorConfigBuilder};
 use sui_test_transaction_builder::TestTransactionBuilder;
-use sui_types::base_types::ConciseableName;
 use sui_types::base_types::{AuthorityName, ObjectID, ObjectRef, SuiAddress};
-use sui_types::committee::CommitteeTrait;
 use sui_types::committee::{Committee, EpochId};
 use sui_types::crypto::KeypairTraits;
 use sui_types::crypto::SuiKeyPair;
@@ -50,13 +46,10 @@ use sui_types::object::Object;
 use sui_types::sui_system_state::epoch_start_sui_system_state::EpochStartSystemStateTrait;
 use sui_types::sui_system_state::SuiSystemState;
 use sui_types::sui_system_state::SuiSystemStateTrait;
-use sui_types::transaction::{
-    CertifiedTransaction, Transaction, TransactionData, TransactionDataAPI, TransactionKind,
-};
+use sui_types::transaction::{Transaction, TransactionData};
 use tokio::time::{timeout, Instant};
 use tokio::{task::JoinHandle, time::sleep};
 use tracing::info;
-
 const NUM_VALIDATOR: usize = 4;
 
 pub struct FullNodeHandle {
@@ -410,51 +403,10 @@ impl TestCluster {
         }
     }
 
-    pub async fn wait_for_authenticator_state_update(&self) {
-        timeout(
-            Duration::from_secs(60),
-            self.fullnode_handle.sui_node.with_async(|node| async move {
-                let mut txns = node.state().subscription_handler.subscribe_transactions(
-                    TransactionFilter::ChangedObject(ObjectID::from_hex_literal("0x7").unwrap()),
-                );
-                let state = node.state();
-
-                while let Some(tx) = txns.next().await {
-                    let digest = *tx.transaction_digest();
-                    let tx = state
-                        .database
-                        .get_transaction_block(&digest)
-                        .unwrap()
-                        .unwrap();
-                    match &tx.data().intent_message().value.kind() {
-                        TransactionKind::EndOfEpochTransaction(_) => (),
-                        TransactionKind::AuthenticatorStateUpdate(_) => break,
-                        _ => panic!("{:?}", tx),
-                    }
-                }
-            }),
-        )
-        .await
-        .expect("Timed out waiting for authenticator state update");
-    }
-
     pub async fn test_transaction_builder(&self) -> TestTransactionBuilder {
         let (sender, gas) = self.wallet.get_one_gas_object().await.unwrap().unwrap();
-        self.test_transaction_builder_with_gas_object(sender, gas)
-            .await
-    }
-
-    pub async fn test_transaction_builder_with_gas_object(
-        &self,
-        sender: SuiAddress,
-        gas: ObjectRef,
-    ) -> TestTransactionBuilder {
         let rgp = self.get_reference_gas_price().await;
         TestTransactionBuilder::new(sender, gas, rgp)
-    }
-
-    pub fn sign_transaction(&self, tx_data: &TransactionData) -> Transaction {
-        self.wallet.sign_transaction(tx_data)
     }
 
     pub async fn sign_and_execute_transaction(
@@ -484,7 +436,7 @@ impl TestCluster {
     pub async fn execute_transaction_return_raw_effects(
         &self,
         tx: Transaction,
-    ) -> anyhow::Result<(TransactionEffects, TransactionEvents)> {
+    ) -> anyhow::Result<(TransactionEffects, TransactionEvents, Vec<Object>)> {
         let results = self
             .submit_transaction_to_validators(tx.clone(), &self.get_validator_pubkeys())
             .await?;
@@ -498,14 +450,6 @@ impl TestCluster {
             .with(|node| node.clone_authority_aggregator().unwrap())
     }
 
-    pub async fn create_certificate(
-        &self,
-        tx: Transaction,
-    ) -> anyhow::Result<CertifiedTransaction> {
-        let agg = self.authority_aggregator();
-        Ok(agg.process_transaction(tx).await?.into_cert_for_testing())
-    }
-
     /// Execute a transaction on specified list of validators, and bypassing authority aggregator.
     /// This allows us to obtain the return value directly from validators, so that we can access more
     /// information directly such as the original effects, events and extra objects returned.
@@ -515,7 +459,7 @@ impl TestCluster {
         &self,
         tx: Transaction,
         pubkeys: &[AuthorityName],
-    ) -> anyhow::Result<(TransactionEffects, TransactionEvents)> {
+    ) -> anyhow::Result<(TransactionEffects, TransactionEvents, Vec<Object>)> {
         let agg = self.authority_aggregator();
         let certificate = agg.process_transaction(tx).await?.into_cert_for_testing();
         let replies = loop {
@@ -538,6 +482,10 @@ impl TestCluster {
             let replies: Vec<_> = futures::future::join_all(futures)
                 .await
                 .into_iter()
+                // Remove all `FailedToHearBackFromConsensus` replies. Note that the original Sui error type
+                // `SuiError::FailedToHearBackFromConsensus(..)` is lost when the message is sent through the
+                // network (it is replaced by `RpcError`). As a result, the following filter doesn't work:
+                // `.filter(|result| !matches!(result, Err(SuiError::FailedToHearBackFromConsensus(..))))`.
                 .filter(|result| match result {
                     Err(e) => !e.to_string().contains("deadline has elapsed"),
                     _ => true,
@@ -552,17 +500,20 @@ impl TestCluster {
         let replies = replies?;
         let mut all_effects = HashMap::new();
         let mut all_events = HashMap::new();
+        let mut all_objects = HashSet::new();
         for reply in replies {
             let effects = reply.signed_effects.into_data();
             all_effects.insert(effects.digest(), effects);
             all_events.insert(reply.events.digest(), reply.events);
-            // reply.fastpath_input_objects is unused.
+            all_objects.insert(reply.fastpath_input_objects);
         }
         assert_eq!(all_effects.len(), 1);
         assert_eq!(all_events.len(), 1);
+        assert_eq!(all_objects.len(), 1);
         Ok((
             all_effects.into_values().next().unwrap(),
             all_events.into_values().next().unwrap(),
+            all_objects.into_iter().next().unwrap(),
         ))
     }
 
@@ -653,11 +604,7 @@ pub struct TestClusterBuilder {
     db_checkpoint_config_validators: DBCheckpointConfig,
     db_checkpoint_config_fullnodes: DBCheckpointConfig,
     num_unpruned_validators: Option<usize>,
-    jwk_fetch_interval: Option<Duration>,
     config_dir: Option<PathBuf>,
-    default_jwks: bool,
-    overload_threshold_config: Option<OverloadThresholdConfig>,
-    data_ingestion_dir: Option<PathBuf>,
 }
 
 impl TestClusterBuilder {
@@ -674,11 +621,7 @@ impl TestClusterBuilder {
             db_checkpoint_config_validators: DBCheckpointConfig::default(),
             db_checkpoint_config_fullnodes: DBCheckpointConfig::default(),
             num_unpruned_validators: None,
-            jwk_fetch_interval: None,
             config_dir: None,
-            default_jwks: false,
-            overload_threshold_config: None,
-            data_ingestion_dir: None,
         }
     }
 
@@ -755,11 +698,6 @@ impl TestClusterBuilder {
         self
     }
 
-    pub fn with_jwk_fetch_interval(mut self, i: Duration) -> Self {
-        self.jwk_fetch_interval = Some(i);
-        self
-    }
-
     pub fn with_fullnode_supported_protocol_versions_config(
         mut self,
         c: SupportedProtocolVersions,
@@ -812,52 +750,7 @@ impl TestClusterBuilder {
         self
     }
 
-    pub fn with_default_jwks(mut self) -> Self {
-        self.default_jwks = true;
-        self
-    }
-
-    pub fn with_overload_threshold_config(mut self, config: OverloadThresholdConfig) -> Self {
-        assert!(self.network_config.is_none());
-        self.overload_threshold_config = Some(config);
-        self
-    }
-
-    pub fn with_data_ingestion_dir(mut self, path: PathBuf) -> Self {
-        self.data_ingestion_dir = Some(path);
-        self
-    }
-
     pub async fn build(mut self) -> TestCluster {
-        // All test clusters receive a continuous stream of random JWKs.
-        // If we later use zklogin authenticated transactions in tests we will need to supply
-        // valid JWKs as well.
-        #[cfg(msim)]
-        if !self.default_jwks {
-            sui_node::set_jwk_injector(Arc::new(|_authority, provider| {
-                use fastcrypto_zkp::bn254::zk_login::{JwkId, JWK};
-                use rand::Rng;
-
-                // generate random (and possibly conflicting) id/key pairings.
-                let id_num = rand::thread_rng().gen_range(1..=4);
-                let key_num = rand::thread_rng().gen_range(1..=4);
-
-                let id = JwkId {
-                    iss: provider.get_config().iss,
-                    kid: format!("kid{}", id_num),
-                };
-
-                let jwk = JWK {
-                    kty: "kty".to_string(),
-                    e: "e".to_string(),
-                    n: format!("n{}", key_num),
-                    alg: "alg".to_string(),
-                };
-
-                Ok(vec![(id, jwk)])
-            }));
-        }
-
         let swarm = self.start_swarm().await.unwrap();
         let working_dir = swarm.dir();
 
@@ -918,10 +811,6 @@ impl TestClusterBuilder {
             builder = builder.with_network_config(network_config);
         }
 
-        if let Some(overload_threshold_config) = self.overload_threshold_config.take() {
-            builder = builder.with_overload_threshold_config(overload_threshold_config);
-        }
-
         if let Some(fullnode_rpc_port) = self.fullnode_rpc_port {
             builder = builder.with_fullnode_rpc_port(fullnode_rpc_port);
         }
@@ -929,16 +818,8 @@ impl TestClusterBuilder {
             builder = builder.with_num_unpruned_validators(num_unpruned_validators);
         }
 
-        if let Some(jwk_fetch_interval) = self.jwk_fetch_interval {
-            builder = builder.with_jwk_fetch_interval(jwk_fetch_interval);
-        }
-
         if let Some(config_dir) = self.config_dir.take() {
             builder = builder.dir(config_dir);
-        }
-
-        if let Some(data_ingestion_dir) = self.data_ingestion_dir.take() {
-            builder = builder.with_data_ingestion_dir(data_ingestion_dir);
         }
 
         let mut swarm = builder.build();
@@ -953,7 +834,7 @@ impl TestClusterBuilder {
         swarm.config().save(&network_path)?;
         let mut keystore = Keystore::from(FileBasedKeystore::new(&keystore_path)?);
         for key in &swarm.config().account_keys {
-            keystore.add_key(None, SuiKeyPair::Ed25519(key.copy()))?;
+            keystore.add_key(SuiKeyPair::Ed25519(key.copy()))?;
         }
 
         let active_address = keystore.addresses().first().cloned();

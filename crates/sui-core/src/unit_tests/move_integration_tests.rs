@@ -1221,9 +1221,9 @@ async fn test_entry_point_vector_error() {
     )
     .await
     .unwrap();
-    // support shared objects in vectors
+    // should fail as we do not support shared objects in vectors
     assert!(
-        matches!(effects.status(), ExecutionStatus::Success { .. }),
+        matches!(effects.status(), ExecutionStatus::Failure { .. }),
         "{:?}",
         effects.status()
     );
@@ -1608,9 +1608,9 @@ async fn test_entry_point_vector_any_error() {
     )
     .await
     .unwrap();
-    // support shared objects in vectors
+    // should fail as we do not support shared objects in vectors
     assert!(
-        matches!(effects.status(), ExecutionStatus::Success { .. }),
+        matches!(effects.status(), ExecutionStatus::Failure { .. }),
         "{:?}",
         effects.status()
     );
@@ -3022,7 +3022,7 @@ async fn check_latest_object_ref(
     let response = authority
         .handle_object_info_request(ObjectInfoRequest {
             object_id: object_ref.0,
-            generate_layout: LayoutGenerationOption::None,
+            object_format_options: None,
             request_kind: ObjectInfoRequestKind::LatestObjectInfo,
         })
         .await;

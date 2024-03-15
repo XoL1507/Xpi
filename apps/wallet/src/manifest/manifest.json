@@ -32,10 +32,6 @@
 		{
 			"resources": ["dapp-interface.js"],
 			"matches": ["<all_urls>"]
-		},
-		{
-			"resources": ["ui.html"],
-			"matches": ["https://*.banxa.com/*"]
 		}
 	],
 	"content_security_policy": {

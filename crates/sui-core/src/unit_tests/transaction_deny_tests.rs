@@ -23,12 +23,11 @@ use sui_types::error::{SuiError, SuiResult, UserInputError};
 use sui_types::execution_status::{ExecutionFailureStatus, ExecutionStatus};
 use sui_types::messages_grpc::HandleTransactionResponse;
 use sui_types::transaction::{
-    CallArg, CertifiedTransaction, Transaction, TransactionData, VerifiedCertificate,
-    VerifiedTransaction, TEST_ONLY_GAS_UNIT_FOR_TRANSFER,
+    CallArg, CertifiedTransaction, TransactionData, VerifiedCertificate,
+    TEST_ONLY_GAS_UNIT_FOR_TRANSFER,
 };
-use sui_types::utils::get_zklogin_user_address;
 use sui_types::utils::{
-    make_zklogin_tx, to_sender_signed_transaction, to_sender_signed_transaction_with_multi_signers,
+    to_sender_signed_transaction, to_sender_signed_transaction_with_multi_signers,
 };
 
 const ACCOUNT_NUM: usize = 5;
@@ -91,17 +90,6 @@ fn get_accounts_and_coins(
     accounts
 }
 
-async fn process_zklogin_tx(
-    tx: Transaction,
-    state: &Arc<AuthorityState>,
-) -> SuiResult<HandleTransactionResponse> {
-    let verified_tx = VerifiedTransaction::new_from_verified(tx);
-
-    state
-        .handle_transaction(&state.epoch_store_for_testing(), verified_tx)
-        .await
-}
-
 async fn transfer_with_account(
     sender_account: &Account,
     sponsor_account: &Account,
@@ -125,9 +113,10 @@ async fn transfer_with_account(
             vec![&sender_account.1, &sponsor_account.1],
         )
     };
-    let epoch_store = state.epoch_store_for_testing();
-    let tx = epoch_store.verify_transaction(tx).unwrap();
-    state.handle_transaction(&epoch_store, tx).await
+    let tx = state.verify_transaction(tx).unwrap();
+    state
+        .handle_transaction(&state.epoch_store_for_testing(), tx)
+        .await
 }
 
 async fn handle_move_call_transaction(
@@ -152,10 +141,11 @@ async fn handle_move_call_transaction(
         rgp,
     )
     .unwrap();
-    let epoch_store = state.epoch_store_for_testing();
     let tx = to_sender_signed_transaction(data, &account.1);
-    let tx = epoch_store.verify_transaction(tx).unwrap();
-    state.handle_transaction(&epoch_store, tx).await
+    let tx = state.verify_transaction(tx).unwrap();
+    state
+        .handle_transaction(&state.epoch_store_for_testing(), tx)
+        .await
 }
 
 fn assert_denied<T: std::fmt::Debug>(result: &SuiResult<T>) {
@@ -177,27 +167,6 @@ async fn test_user_transaction_disabled() {
     .await;
     let accounts = get_accounts_and_coins(&network_config, &state);
     assert_denied(&transfer_with_account(&accounts[0], &accounts[0], &state).await);
-}
-
-#[tokio::test]
-async fn test_zklogin_transaction_disabled() {
-    let (_, state) = setup_test(
-        TransactionDenyConfigBuilder::new()
-            .disable_zklogin_sig()
-            .build(),
-    )
-    .await;
-    let (_, tx, _) = make_zklogin_tx(get_zklogin_user_address(), false);
-    assert_denied(&process_zklogin_tx(tx, &state).await);
-
-    let (_, state1) = setup_test(
-        TransactionDenyConfigBuilder::new()
-            .add_zklogin_disabled_provider("Twitch".to_string())
-            .build(),
-    )
-    .await;
-    let (_, tx1, _) = make_zklogin_tx(get_zklogin_user_address(), false);
-    assert_denied(&process_zklogin_tx(tx1, &state1).await);
 }
 
 #[tokio::test]
@@ -254,9 +223,10 @@ async fn test_shared_object_transaction_disabled() {
     let tx = TestTransactionBuilder::new(account.0, account.2[0], gas_price)
         .call_staking(account.2[1], SuiAddress::default())
         .build_and_sign(&account.1);
-    let epoch_store = state.epoch_store_for_testing();
-    let tx = epoch_store.verify_transaction(tx).unwrap();
-    let result = state.handle_transaction(&epoch_store, tx).await;
+    let tx = state.verify_transaction(tx).unwrap();
+    let result = state
+        .handle_transaction(&state.epoch_store_for_testing(), tx)
+        .await;
     assert_denied(&result);
 }
 
@@ -276,9 +246,10 @@ async fn test_package_publish_disabled() {
     let tx = TestTransactionBuilder::new(sender, gas_object, rgp)
         .publish(path)
         .build_and_sign(keypair);
-    let epoch_store = state.epoch_store_for_testing();
-    let tx = epoch_store.verify_transaction(tx).unwrap();
-    let result = state.handle_transaction(&epoch_store, tx).await;
+    let tx = state.verify_transaction(tx).unwrap();
+    let result = state
+        .handle_transaction(&state.epoch_store_for_testing(), tx)
+        .await;
     assert_denied(&result);
 }
 
@@ -455,7 +426,7 @@ async fn test_certificate_deny() {
         .build()
         .await;
     let epoch_store = state.epoch_store_for_testing();
-    let tx = epoch_store.verify_transaction(tx).unwrap();
+    let tx = state.verify_transaction(tx).unwrap();
     let signature = state
         .handle_transaction(&epoch_store, tx.clone())
         .await

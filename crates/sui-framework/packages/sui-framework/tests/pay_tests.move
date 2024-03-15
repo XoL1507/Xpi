@@ -14,7 +14,7 @@ module sui::pay_tests {
     const TEST_SENDER_ADDR: address = @0xA11CE;
 
     #[test]
-    fun test_coin_split_n() {
+    public entry fun test_coin_split_n() {
         let scenario_val = test_scenario::begin(TEST_SENDER_ADDR);
         let scenario = &mut scenario_val;
         let ctx = test_scenario::ctx(scenario);
@@ -45,7 +45,7 @@ module sui::pay_tests {
     }
 
     #[test]
-    fun test_coin_split_n_to_vec() {
+    public entry fun test_coin_split_n_to_vec() {
         let scenario_val = test_scenario::begin(TEST_SENDER_ADDR);
         let scenario = &mut scenario_val;
         let ctx = test_scenario::ctx(scenario);
@@ -69,7 +69,7 @@ module sui::pay_tests {
     }
 
     #[test]
-    fun test_split_vec() {
+    public entry fun test_split_vec() {
         let scenario_val = test_scenario::begin(TEST_SENDER_ADDR);
         let scenario = &mut scenario_val;
         let ctx = test_scenario::ctx(scenario);
@@ -96,7 +96,7 @@ module sui::pay_tests {
     }
 
     #[test]
-    fun test_split_and_transfer() {
+    public entry fun test_split_and_transfer() {
         let scenario_val = test_scenario::begin(TEST_SENDER_ADDR);
         let scenario = &mut scenario_val;
         let ctx = test_scenario::ctx(scenario);
@@ -118,7 +118,7 @@ module sui::pay_tests {
 
     #[test]
     #[expected_failure(abort_code = balance::ENotEnough)]
-    fun test_split_and_transfer_fail() {
+    public entry fun test_split_and_transfer_fail() {
         let scenario_val = test_scenario::begin(TEST_SENDER_ADDR);
         let scenario = &mut scenario_val;
         let ctx = test_scenario::ctx(scenario);
@@ -137,7 +137,7 @@ module sui::pay_tests {
     }
 
     #[test]
-    fun test_join_vec_and_transfer() {
+    public entry fun test_join_vec_and_transfer() {
         let scenario_val = test_scenario::begin(TEST_SENDER_ADDR);
         let scenario = &mut scenario_val;
         let ctx = test_scenario::ctx(scenario);

@@ -1,8 +1,6 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { type SignMessageApprovalRequest } from '_payloads/transactions/ApprovalRequest';
-import { toUtf8OrB64 } from '_src/shared/utils';
 import { useMemo } from 'react';
 
 import { UserApproveContainer } from '../../components/user-approve-container';
@@ -14,6 +12,8 @@ import { respondToTransactionRequest } from '../../redux/slices/transaction-requ
 import { Heading } from '../../shared/heading';
 import { PageMainLayoutTitle } from '../../shared/page-main-layout/PageMainLayoutTitle';
 import { Text } from '../../shared/text';
+import { type SignMessageApprovalRequest } from '_payloads/transactions/ApprovalRequest';
+import { toUtf8OrB64 } from '_src/shared/utils';
 
 export type SignMessageRequestProps = {
 	request: SignMessageApprovalRequest;

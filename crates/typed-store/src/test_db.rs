@@ -11,8 +11,8 @@ use std::{
 };
 
 use crate::{
-    rocks::{be_fix_int_ser, errors::typed_store_err_from_bcs_err},
-    Map, TypedStoreError,
+    rocks::{be_fix_int_ser, TypedStoreError},
+    Map,
 };
 use bincode::Options;
 use collectable::TryExtend;
@@ -246,7 +246,7 @@ where
 
     fn insert(&self, key: &K, value: &V) -> Result<(), Self::Error> {
         let raw_key = be_fix_int_ser(key)?;
-        let raw_value = bcs::to_bytes(value).map_err(typed_store_err_from_bcs_err)?;
+        let raw_value = bcs::to_bytes(value)?;
         let mut locked = self.rows.write().unwrap();
         locked.insert(raw_key, raw_value);
         Ok(())
@@ -277,7 +277,7 @@ where
     }
 
     fn unbounded_iter(&'a self) -> Self::Iterator {
-        unimplemented!("unimplemented API");
+        unimplemented!("umplemented API");
     }
 
     fn iter_with_bounds(
@@ -285,11 +285,11 @@ where
         _lower_bound: Option<K>,
         _upper_bound: Option<K>,
     ) -> Self::Iterator {
-        unimplemented!("unimplemented API");
+        unimplemented!("umplemented API");
     }
 
     fn range_iter(&'a self, _range: impl RangeBounds<K>) -> Self::Iterator {
-        unimplemented!("unimplemented API");
+        unimplemented!("umplemented API");
     }
 
     fn safe_iter(&'a self) -> Self::SafeIterator {
@@ -300,10 +300,6 @@ where
             direction: Direction::Forward,
         }
         .build()
-    }
-
-    fn safe_range_iter(&'a self, _range: impl RangeBounds<K>) -> Self::SafeIterator {
-        unimplemented!("unimplemented API");
     }
 
     fn keys(&'a self) -> Self::Keys {
@@ -475,8 +471,8 @@ impl TestDBWriteBatch {
         from: &K,
         to: &K,
     ) -> Result<(), TypedStoreError> {
-        let raw_from = be_fix_int_ser(from).unwrap();
-        let raw_to = be_fix_int_ser(to).unwrap();
+        let raw_from = be_fix_int_ser(from.borrow()).unwrap();
+        let raw_to = be_fix_int_ser(to.borrow()).unwrap();
         self.ops.push_back(WriteBatchOp::DeleteRange((
             db.rows.clone(),
             db.name.clone(),

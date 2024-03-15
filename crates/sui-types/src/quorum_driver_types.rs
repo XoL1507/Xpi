@@ -13,6 +13,7 @@ use crate::effects::{
 };
 use crate::error::SuiError;
 use crate::messages_checkpoint::CheckpointSequenceNumber;
+use crate::object::Object;
 use crate::transaction::{Transaction, VerifiedTransaction};
 use serde::{Deserialize, Serialize};
 use strum::AsRefStr;
@@ -106,6 +107,7 @@ pub struct QuorumDriverRequest {
 pub struct QuorumDriverResponse {
     pub effects_cert: VerifiedCertifiedTransactionEffects,
     pub events: TransactionEvents,
+    pub objects: Vec<Object>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

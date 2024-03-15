@@ -16,7 +16,6 @@ use move_core_types::language_storage::{ModuleId, StructTag, TypeTag};
 use prometheus::{register_int_counter_with_registry, IntCounter, Registry};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
-use sui_types::execution::DynamicallyLoadedObjectMetadata;
 use tokio::sync::OwnedMutexGuard;
 
 use crate::mutex_table::MutexTable;
@@ -278,7 +277,7 @@ fn coin_index_table_default_config() -> DBOptions {
 impl IndexStore {
     pub fn new(path: PathBuf, registry: &Registry, max_type_length: Option<u64>) -> Self {
         let tables =
-            IndexStoreTables::open_tables_read_write(path, MetricConf::new("index"), None, None);
+            IndexStoreTables::open_tables_read_write(path, MetricConf::default(), None, None);
         let metrics = IndexStoreMetrics::new(registry);
         let caches = IndexStoreCaches {
             per_coin_type_balance: ShardedLruCache::new(1_000_000, 1000),
@@ -356,7 +355,7 @@ impl IndexStore {
                         obj_id, input_coins, digest
                     )
                 });
-                let map = balance_changes.entry(*owner).or_default();
+                let map = balance_changes.entry(*owner).or_insert(HashMap::new());
                 let entry = map.entry(coin_type_tag.clone()).or_insert(TotalBalance {
                     num_coins: 0,
                     balance: 0
@@ -398,7 +397,7 @@ impl IndexStore {
                     obj_id, written_coins, digest
                 )
             });
-            let map = balance_changes.entry(*owner).or_default();
+            let map = balance_changes.entry(*owner).or_insert(HashMap::new());
             let entry = map.entry(coin_type_tag.clone()).or_insert(TotalBalance {
                 num_coins: 0,
                 balance: 0
@@ -460,7 +459,7 @@ impl IndexStore {
         digest: &TransactionDigest,
         timestamp_ms: u64,
         tx_coins: Option<TxCoins>,
-        loaded_child_objects: &BTreeMap<ObjectID, DynamicallyLoadedObjectMetadata>,
+        loaded_child_objects: &BTreeMap<ObjectID, SequenceNumber>,
     ) -> SuiResult<u64> {
         let sequence = self.next_sequence_number.fetch_add(1, Ordering::SeqCst);
         let mut batch = self.tables.transactions_from_addr.batch();
@@ -604,10 +603,7 @@ impl IndexStore {
         )?;
 
         // Loaded child objects table
-        let loaded_child_objects: Vec<_> = loaded_child_objects
-            .iter()
-            .map(|(oid, meta)| (*oid, meta.version))
-            .collect();
+        let loaded_child_objects: Vec<_> = loaded_child_objects.clone().into_iter().collect();
         batch.insert_batch(
             &self.tables.loaded_child_object_versions,
             std::iter::once((*digest, loaded_child_objects)),

@@ -3,9 +3,10 @@
 
 use anyhow::Result;
 use sui_types::base_types::{ObjectID, SequenceNumber};
-use sui_types::full_checkpoint_content::CheckpointData;
 use sui_types::messages_checkpoint::{CertifiedCheckpointSummary, CheckpointSequenceNumber};
 use sui_types::object::Object;
+
+use crate::checkpoints::CheckpointData;
 
 #[derive(Clone)]
 pub struct Client {
@@ -53,24 +54,6 @@ impl Client {
             .await?;
 
         bcs::from_bytes(&bytes).map_err(Into::into)
-    }
-
-    pub async fn get_checkpoint_summary(
-        &self,
-        checkpoint_sequence_number: CheckpointSequenceNumber,
-    ) -> Result<CertifiedCheckpointSummary> {
-        let url = format!("{}/checkpoints/{checkpoint_sequence_number}", self.base_url);
-
-        let checkpoint = self
-            .inner
-            .get(url)
-            .header(reqwest::header::ACCEPT, crate::APPLICATION_BCS)
-            .send()
-            .await?
-            .json()
-            .await?;
-
-        Ok(checkpoint)
     }
 
     pub async fn get_object(&self, object_id: ObjectID) -> Result<Object> {

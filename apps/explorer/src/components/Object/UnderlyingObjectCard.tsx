@@ -1,7 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useSuiClientQuery } from '@mysten/dapp-kit';
+import { useDynamicFieldObject, useNormalizedMoveStruct } from '@mysten/dapp-kit';
 import { LoadingIndicator } from '@mysten/ui';
 
 import { FieldItem } from './FieldItem';
@@ -20,10 +20,7 @@ export function UnderlyingObjectCard({
 	name,
 	dynamicFieldType,
 }: UnderlyingObjectCardProps) {
-	const { data, isPending, isError, isFetched } = useSuiClientQuery('getDynamicFieldObject', {
-		parentId,
-		name,
-	});
+	const { data, isLoading, isError, isFetched } = useDynamicFieldObject({ parentId, name });
 	const objectType =
 		data?.data?.type ??
 		(data?.data?.content?.dataType === 'package' ? 'package' : data?.data?.content?.type) ??
@@ -35,14 +32,14 @@ export function UnderlyingObjectCard({
 	const {
 		data: normalizedStruct,
 		isFetched: normalizedStructFetched,
-		isPending: loadingNormalizedStruct,
-	} = useSuiClientQuery('getNormalizedMoveStruct', {
+		isLoading: loadingNormalizedStruct,
+	} = useNormalizedMoveStruct({
 		package: packageId,
 		module: moduleName,
 		struct: functionName,
 	});
 
-	const isDataLoading = isPending || loadingNormalizedStruct;
+	const isDataLoading = isLoading || loadingNormalizedStruct;
 
 	// Check for error first before showing the loading spinner to avoid infinite loading if GetDynamicFieldObject fails
 	if (

@@ -11,14 +11,19 @@ use axum::{
     extract::{Path, State},
     Json, TypedHeader,
 };
-use sui_types::full_checkpoint_content::{CheckpointData, CheckpointTransaction};
+use serde::{Deserialize, Serialize};
+use sui_core::authority::AuthorityState;
 use sui_types::{
-    effects::TransactionEffectsAPI,
-    messages_checkpoint::{CertifiedCheckpointSummary, CheckpointSequenceNumber},
+    effects::{TransactionEffects, TransactionEffectsAPI, TransactionEvents},
+    messages_checkpoint::{
+        CertifiedCheckpointSummary, CheckpointContents, CheckpointSequenceNumber,
+    },
+    object::Object,
     storage::ObjectKey,
+    transaction::Transaction,
 };
 
-use crate::{headers::Accept, node_state_getter::NodeStateGetter, AppError, Bcs};
+use crate::{headers::Accept, AppError, Bcs};
 
 pub const GET_LATEST_CHECKPOINT_PATH: &str = "/checkpoints";
 pub const GET_CHECKPOINT_PATH: &str = "/checkpoints/:checkpoint";
@@ -28,7 +33,7 @@ pub async fn get_full_checkpoint(
     //TODO support digest as well as sequence number
     Path(checkpoint_id): Path<CheckpointSequenceNumber>,
     TypedHeader(accept): TypedHeader<Accept>,
-    State(state): State<Arc<dyn NodeStateGetter>>,
+    State(state): State<Arc<AuthorityState>>,
 ) -> Result<Bcs<CheckpointData>, AppError> {
     if accept.as_str() != crate::APPLICATION_BCS {
         return Err(AppError(anyhow::anyhow!("invalid accept type")));
@@ -43,6 +48,7 @@ pub async fn get_full_checkpoint(
         .collect::<Vec<_>>();
 
     let transactions = state
+        .database
         .multi_get_transaction_blocks(&transaction_digests)?
         .into_iter()
         .map(|maybe_transaction| {
@@ -51,6 +57,7 @@ pub async fn get_full_checkpoint(
         .collect::<Result<Vec<_>>>()?;
 
     let effects = state
+        .database
         .multi_get_executed_effects(&transaction_digests)?
         .into_iter()
         .map(|maybe_effects| maybe_effects.ok_or_else(|| anyhow::anyhow!("missing effects")))
@@ -62,6 +69,7 @@ pub async fn get_full_checkpoint(
         .collect::<Vec<_>>();
 
     let events = state
+        .database
         .multi_get_events(&event_digests)?
         .into_iter()
         .map(|maybe_event| maybe_event.ok_or_else(|| anyhow::anyhow!("missing event")))
@@ -90,10 +98,7 @@ pub async fn get_full_checkpoint(
         let input_object_keys = fx
             .input_shared_objects()
             .into_iter()
-            .map(|kind| {
-                let (id, version) = kind.id_and_version();
-                ObjectKey(id, version)
-            })
+            .map(|(object_ref, _kind)| ObjectKey::from(object_ref))
             .chain(
                 fx.modified_at_versions()
                     .into_iter()
@@ -106,6 +111,7 @@ pub async fn get_full_checkpoint(
             .collect::<Vec<_>>();
 
         let input_objects = state
+            .database
             .multi_get_object_by_key(&input_object_keys)?
             .into_iter()
             .enumerate()
@@ -127,6 +133,7 @@ pub async fn get_full_checkpoint(
             .collect::<Vec<_>>();
 
         let output_objects = state
+            .database
             .multi_get_object_by_key(&output_object_keys)?
             .into_iter()
             .enumerate()
@@ -159,8 +166,29 @@ pub async fn get_full_checkpoint(
     }))
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CheckpointData {
+    pub checkpoint_summary: CertifiedCheckpointSummary,
+    pub checkpoint_contents: CheckpointContents,
+    pub transactions: Vec<CheckpointTransaction>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CheckpointTransaction {
+    /// The input Transaction
+    pub transaction: Transaction,
+    /// The effects produced by executing this transaction
+    pub effects: TransactionEffects,
+    /// The events, if any, emitted by this transaciton during execution
+    pub events: Option<TransactionEvents>,
+    /// The state of all inputs to this transaction as they were prior to execution.
+    pub input_objects: Vec<Object>,
+    /// The state of all output objects created or mutated by this transaction.
+    pub output_objects: Vec<Object>,
+}
+
 pub async fn get_latest_checkpoint(
-    State(state): State<Arc<dyn NodeStateGetter>>,
+    State(state): State<Arc<AuthorityState>>,
 ) -> Result<Json<CertifiedCheckpointSummary>, AppError> {
     let latest_checkpoint_sequence_number = state.get_latest_checkpoint_sequence_number()?;
     let verified_summary =
@@ -171,7 +199,7 @@ pub async fn get_latest_checkpoint(
 pub async fn get_checkpoint(
     //TODO support digest as well as sequence number
     Path(checkpoint_id): Path<CheckpointSequenceNumber>,
-    State(state): State<Arc<dyn NodeStateGetter>>,
+    State(state): State<Arc<AuthorityState>>,
 ) -> Result<Json<CertifiedCheckpointSummary>, AppError> {
     let verified_summary = state.get_verified_checkpoint_by_sequence_number(checkpoint_id)?;
     Ok(Json(verified_summary.into()))

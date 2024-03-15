@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 /* eslint-disable @tanstack/query/exhaustive-deps */
 
-import { useSuiClient } from '@mysten/dapp-kit';
-import { PaginatedObjectsResponse } from '@mysten/sui.js/client';
 import { useQuery } from '@tanstack/react-query';
-
-import { TANSTACK_OWNED_OBJECTS_KEY } from '../utils/constants';
+import { useRpc } from '../context/RpcClientContext';
+import { PaginatedObjectsResponse } from '@mysten/sui.js/client';
 import { parseObjectDisplays } from '../utils/utils';
+import { TANSTACK_OWNED_OBJECTS_KEY } from '../utils/constants';
 
 export function useOwnedObjects({
 	address,
@@ -18,7 +17,7 @@ export function useOwnedObjects({
 	cursor?: string;
 	limit?: number;
 }) {
-	const provider = useSuiClient();
+	const provider = useRpc();
 
 	return useQuery({
 		queryKey: [TANSTACK_OWNED_OBJECTS_KEY, address],

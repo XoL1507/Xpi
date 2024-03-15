@@ -8,7 +8,7 @@ use crate::{
 };
 use sui_types::{
     base_types::{dbg_addr, dbg_object_id},
-    messages_grpc::LayoutGenerationOption,
+    object::ObjectFormatOptions,
 };
 
 //This is the most basic example of how to test the server logic
@@ -33,8 +33,10 @@ async fn test_simple_request() {
         .await
         .unwrap();
 
-    let req =
-        ObjectInfoRequest::latest_object_info_request(object_id, LayoutGenerationOption::Generate);
+    let req = ObjectInfoRequest::latest_object_info_request(
+        object_id,
+        Some(ObjectFormatOptions::default()),
+    );
 
     client.handle_object_info_request(req).await.unwrap();
 }

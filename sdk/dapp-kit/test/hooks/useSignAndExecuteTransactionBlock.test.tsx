@@ -1,18 +1,16 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { getFullnodeUrl, SuiClient } from '@mysten/sui.js/client';
+import { renderHook, waitFor, act } from '@testing-library/react';
+import { useConnectWallet, useSignAndExecuteTransactionBlock } from 'dapp-kit/src';
 import { TransactionBlock } from '@mysten/sui.js/transactions';
-import { act, renderHook, waitFor } from '@testing-library/react';
-import type { Mock } from 'vitest';
-
+import { createWalletProviderContextWrapper, registerMockWallet } from '../test-utils.js';
 import {
 	WalletFeatureNotSupportedError,
 	WalletNotConnectedError,
-} from '../../src/errors/walletErrors.js';
-import { useConnectWallet, useSignAndExecuteTransactionBlock } from '../../src/index.js';
+} from 'dapp-kit/src/errors/walletErrors.js';
+import type { Mock } from 'vitest';
 import { suiFeatures } from '../mocks/mockFeatures.js';
-import { createWalletProviderContextWrapper, registerMockWallet } from '../test-utils.js';
 
 describe('useSignAndExecuteTransactionBlock', () => {
 	test('throws an error when trying to sign and execute a transaction block without a wallet connection', async () => {
@@ -60,12 +58,7 @@ describe('useSignAndExecuteTransactionBlock', () => {
 			features: suiFeatures,
 		});
 
-		const suiClient = new SuiClient({ url: getFullnodeUrl('localnet') });
-		const executeTransactionBlock = vi.spyOn(suiClient, 'executeTransactionBlock');
-
-		executeTransactionBlock.mockReturnValueOnce(Promise.resolve({ digest: '123' }));
-
-		const wrapper = createWalletProviderContextWrapper({}, suiClient);
+		const wrapper = createWalletProviderContextWrapper();
 		const { result } = renderHook(
 			() => ({
 				connectWallet: useConnectWallet(),
@@ -78,12 +71,13 @@ describe('useSignAndExecuteTransactionBlock', () => {
 
 		await waitFor(() => expect(result.current.connectWallet.isSuccess).toBe(true));
 
-		const signTransactionBlockFeature = mockWallet.features['sui:signTransactionBlock'];
-		const signTransactionBlockMock = signTransactionBlockFeature!.signTransactionBlock as Mock;
+		const useSignAndExecuteTransactionBlockFeature =
+			mockWallet.features['sui:signAndExecuteTransactionBlock'];
+		const useSignAndExecuteTransactionBlockMock = useSignAndExecuteTransactionBlockFeature!
+			.signAndExecuteTransactionBlock as Mock;
 
-		signTransactionBlockMock.mockReturnValueOnce({
-			transactionBlockBytes: 'abc',
-			signature: '123',
+		useSignAndExecuteTransactionBlockMock.mockReturnValueOnce({
+			digest: '123',
 		});
 
 		result.current.useSignAndExecuteTransactionBlock.mutate({
@@ -96,10 +90,6 @@ describe('useSignAndExecuteTransactionBlock', () => {
 		);
 		expect(result.current.useSignAndExecuteTransactionBlock.data).toStrictEqual({
 			digest: '123',
-		});
-		expect(suiClient.executeTransactionBlock).toHaveBeenCalledWith({
-			transactionBlock: 'abc',
-			signature: '123',
 		});
 
 		act(() => unregister());

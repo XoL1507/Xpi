@@ -1,13 +1,12 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { type SerializedUIAccount } from '_src/background/accounts/Account';
 import { CheckFill16 } from '@mysten/icons';
-
+import { AccountListItem } from './AccountListItem';
 import { Link } from '../../shared/Link';
 import { Text } from '../../shared/text';
 import { Tooltip } from '../../shared/tooltip';
-import { AccountListItem } from './AccountListItem';
+import { type SerializedUIAccount } from '_src/background/accounts/Account';
 
 export type RecoverAccountsGroupProps = {
 	title: string;

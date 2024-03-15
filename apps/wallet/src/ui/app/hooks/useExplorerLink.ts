@@ -3,15 +3,15 @@
 
 import { useMemo } from 'react';
 
+import { useActiveAddress } from './useActiveAddress';
+import useAppSelector from './useAppSelector';
 import {
-	getAddressUrl,
 	getObjectUrl,
+	getAddressUrl,
 	getTransactionUrl,
 	getValidatorUrl,
 } from '../components/explorer-link//Explorer';
 import { ExplorerLinkType } from '../components/explorer-link/ExplorerLinkType';
-import { useActiveAddress } from './useActiveAddress';
-import useAppSelector from './useAppSelector';
 
 export type ExplorerLinkConfig =
 	| {

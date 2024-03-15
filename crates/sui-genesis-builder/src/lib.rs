@@ -17,7 +17,7 @@ use sui_config::genesis::{
     UnsignedGenesis,
 };
 use sui_execution::{self, Executor};
-use sui_framework::{BuiltInFramework, SystemPackage};
+use sui_framework::BuiltInFramework;
 use sui_protocol_config::{Chain, ProtocolConfig, ProtocolVersion};
 use sui_types::base_types::{
     ExecutionDigests, ObjectID, SequenceNumber, SuiAddress, TransactionDigest, TxContext,
@@ -27,7 +27,6 @@ use sui_types::crypto::{
     AuthorityKeyPair, AuthorityPublicKeyBytes, AuthoritySignInfo, AuthoritySignInfoTrait,
     AuthoritySignature, DefaultHash, SuiAuthoritySignature,
 };
-use sui_types::digests::ChainIdentifier;
 use sui_types::effects::{TransactionEffects, TransactionEffectsAPI, TransactionEvents};
 use sui_types::epoch_data::EpochData;
 use sui_types::gas::SuiGasStatus;
@@ -43,9 +42,7 @@ use sui_types::metrics::LimitsMetrics;
 use sui_types::object::{Object, Owner};
 use sui_types::programmable_transaction_builder::ProgrammableTransactionBuilder;
 use sui_types::sui_system_state::{get_sui_system_state, SuiSystemState, SuiSystemStateTrait};
-use sui_types::transaction::{
-    CallArg, CheckedInputObjects, Command, InputObjectKind, ObjectReadResult, Transaction,
-};
+use sui_types::transaction::{CallArg, Command, InputObjectKind, InputObjects, Transaction};
 use sui_types::{SUI_FRAMEWORK_ADDRESS, SUI_SYSTEM_ADDRESS};
 use tracing::trace;
 use validator_info::{GenesisValidatorInfo, GenesisValidatorMetadata, ValidatorInfo};
@@ -315,10 +312,6 @@ impl Builder {
         } else {
             assert!(unsigned_genesis.authenticator_state_object().is_none());
         }
-        assert_eq!(
-            protocol_config.random_beacon(),
-            unsigned_genesis.has_randomness_state_object()
-        );
 
         assert_eq!(
             self.validators.len(),
@@ -461,8 +454,8 @@ impl Builder {
                     .iter()
                     .find(|(_k, (o, s))| {
                         let Owner::AddressOwner(owner) = &o.owner else {
-                            panic!("gas object owner must be address owner");
-                        };
+                        panic!("gas object owner must be address owner");
+                    };
                         *owner == allocation.recipient_address
                             && s.principal() == allocation.amount_mist
                             && s.pool_id() == staking_pool_id
@@ -671,14 +664,13 @@ fn create_genesis_context(
     genesis_chain_parameters: &GenesisChainParameters,
     genesis_validators: &[GenesisValidatorMetadata],
     token_distribution_schedule: &TokenDistributionSchedule,
-    system_packages: &[SystemPackage],
 ) -> TxContext {
     let mut hasher = DefaultHash::default();
     hasher.update(b"sui-genesis");
     hasher.update(&bcs::to_bytes(genesis_chain_parameters).unwrap());
     hasher.update(&bcs::to_bytes(genesis_validators).unwrap());
     hasher.update(&bcs::to_bytes(token_distribution_schedule).unwrap());
-    for system_package in system_packages {
+    for system_package in BuiltInFramework::iter_system_packages() {
         hasher.update(&bcs::to_bytes(system_package.bytes()).unwrap());
     }
 
@@ -696,11 +688,9 @@ fn get_genesis_protocol_config(version: ProtocolVersion) -> ProtocolConfig {
     // We have a circular dependency here. Protocol config depends on chain ID, which
     // depends on genesis checkpoint (digest), which depends on genesis transaction, which
     // depends on protocol config.
-    //
-    // ChainIdentifier::default().chain() which can be overridden by the
-    // SUI_PROTOCOL_CONFIG_CHAIN_OVERRIDE if necessary (this is mainly used for compatibility tests
-    // in which we want to start a cluster that thinks it is mainnet).
-    ProtocolConfig::get_for_version(version, ChainIdentifier::default().chain())
+    // However since we know there are no chain specific protocol config options in genesis,
+    // we use Chain::Unknown here.
+    ProtocolConfig::get_for_version(version, Chain::Unknown)
 }
 
 fn build_unsigned_genesis_data(
@@ -727,19 +717,11 @@ fn build_unsigned_genesis_data(
 
     let epoch_data = EpochData::new_genesis(genesis_chain_parameters.chain_start_timestamp_ms);
 
-    // Get the correct system packages for our protocol version. If we cannot find the snapshot
-    // that means that we must be at the latest version and we should use the latest version of the
-    // framework.
-    let system_packages =
-        sui_framework_snapshot::load_bytecode_snapshot(parameters.protocol_version.as_u64())
-            .unwrap_or_else(|_| BuiltInFramework::iter_system_packages().cloned().collect());
-
     let mut genesis_ctx = create_genesis_context(
         &epoch_data,
         &genesis_chain_parameters,
         &genesis_validators,
         token_distribution_schedule,
-        &system_packages,
     );
 
     // Use a throwaway metrics registry for genesis transaction execution.
@@ -752,7 +734,6 @@ fn build_unsigned_genesis_data(
         &genesis_validators,
         &genesis_chain_parameters,
         token_distribution_schedule,
-        system_packages,
         metrics.clone(),
     );
 
@@ -782,8 +763,7 @@ fn create_genesis_checkpoint(
         transaction: *transaction.digest(),
         effects: effects.digest(),
     };
-    let contents =
-        CheckpointContents::new_with_digests_and_signatures([execution_digests], vec![vec![]]);
+    let contents = CheckpointContents::new_with_causally_ordered_transactions([execution_digests]);
     let checkpoint = CheckpointSummary {
         epoch: 0,
         sequence_number: 0,
@@ -826,7 +806,6 @@ fn create_genesis_transaction(
                     *initial_shared_version = SequenceNumber::MIN;
                 }
 
-                let object = object.into_inner();
                 sui_types::transaction::GenesisObject::RawObject {
                     data: object.data,
                     owner: object.owner,
@@ -842,14 +821,15 @@ fn create_genesis_transaction(
     // execute txn to effects
     let (effects, events, objects) = {
         let silent = true;
-        let executor = sui_execution::executor(protocol_config, silent)
+        let paranoid_checks = false;
+        let executor = sui_execution::executor(protocol_config, paranoid_checks, silent)
             .expect("Creating an executor should not fail here");
 
         let expensive_checks = false;
         let certificate_deny_set = HashSet::new();
         let transaction_data = &genesis_transaction.data().intent_message().value;
         let (kind, signer, _) = transaction_data.execution_parts();
-        let input_objects = CheckedInputObjects::new_for_genesis(vec![]);
+        let input_objects = InputObjects::new(vec![]);
         let (inner_temp_store, effects, _execution_error) = executor
             .execute_transaction_to_effects(
                 &InMemoryStorage::new(Vec::new()),
@@ -887,7 +867,6 @@ fn create_genesis_objects(
     validators: &[GenesisValidatorMetadata],
     parameters: &GenesisChainParameters,
     token_distribution_schedule: &TokenDistributionSchedule,
-    system_packages: Vec<SystemPackage>,
     metrics: Arc<LimitsMetrics>,
 ) -> Vec<Object> {
     let mut store = InMemoryStorage::new(Vec::new());
@@ -900,10 +879,12 @@ fn create_genesis_objects(
     );
 
     let silent = true;
-    let executor = sui_execution::executor(&protocol_config, silent)
+    // paranoid checks are a last line of defense for malicious code, no need to run them in genesis
+    let paranoid_checks = false;
+    let executor = sui_execution::executor(&protocol_config, paranoid_checks, silent)
         .expect("Creating an executor should not fail here");
 
-    for system_package in system_packages.into_iter() {
+    for system_package in BuiltInFramework::iter_system_packages() {
         process_package(
             &mut store,
             executor.as_ref(),
@@ -917,6 +898,7 @@ fn create_genesis_objects(
     }
 
     {
+        let store = Arc::get_mut(&mut store).expect("only one reference to store");
         for object in input_objects {
             store.insert_object(object.to_owned());
         }
@@ -933,11 +915,12 @@ fn create_genesis_objects(
     )
     .unwrap();
 
+    let store = Arc::try_unwrap(store).expect("only one reference to store");
     store.into_inner().into_values().collect()
 }
 
 fn process_package(
-    store: &mut InMemoryStorage,
+    store: &mut Arc<InMemoryStorage>,
     executor: &dyn Executor,
     ctx: &mut TxContext,
     modules: &[CompiledModule],
@@ -968,11 +951,11 @@ fn process_package(
     }
     let loaded_dependencies: Vec<_> = dependencies
         .iter()
-        .zip(dependency_objects)
+        .zip(dependency_objects.into_iter())
         .filter_map(|(dependency, object)| {
-            Some(ObjectReadResult::new(
+            Some((
                 InputObjectKind::MovePackage(*dependency),
-                object?.clone().into(),
+                object?.to_owned(),
             ))
         })
         .collect();
@@ -996,17 +979,18 @@ fn process_package(
         protocol_config,
         metrics,
         ctx,
-        CheckedInputObjects::new_for_genesis(loaded_dependencies),
+        InputObjects::new(loaded_dependencies),
         pt,
     )?;
 
+    let store = Arc::get_mut(store).expect("only one reference to store");
     store.finish(written);
 
     Ok(())
 }
 
 pub fn generate_genesis_system_object(
-    store: &mut InMemoryStorage,
+    store: &mut Arc<InMemoryStorage>,
     executor: &dyn Executor,
     genesis_validators: &[GenesisValidatorMetadata],
     genesis_ctx: &mut TxContext,
@@ -1042,21 +1026,12 @@ pub fn generate_genesis_system_object(
             vec![],
         )?;
 
-        // Step 3: Create ProtocolConfig-controlled system objects, unless disabled (which only
+        // Step 3: Create the AuthenticatorState object, unless it has been disabled (which only
         // happens in tests).
         if protocol_config.create_authenticator_state_in_genesis() {
             builder.move_call(
                 SUI_FRAMEWORK_ADDRESS.into(),
                 ident_str!("authenticator_state").to_owned(),
-                ident_str!("create").to_owned(),
-                vec![],
-                vec![],
-            )?;
-        }
-        if protocol_config.random_beacon() {
-            builder.move_call(
-                SUI_FRAMEWORK_ADDRESS.into(),
-                ident_str!("random").to_owned(),
                 ident_str!("create").to_owned(),
                 vec![],
                 vec![],
@@ -1095,25 +1070,16 @@ pub fn generate_genesis_system_object(
         builder.finish()
     };
 
-    let InnerTemporaryStore { mut written, .. } = executor.update_genesis_state(
+    let InnerTemporaryStore { written, .. } = executor.update_genesis_state(
         &*store,
         &protocol_config,
         metrics,
         genesis_ctx,
-        CheckedInputObjects::new_for_genesis(vec![]),
+        InputObjects::new(vec![]),
         pt,
     )?;
 
-    // update the value of the clock to match the chain start time
-    {
-        let object = written.get_mut(&sui_types::SUI_CLOCK_OBJECT_ID).unwrap();
-        object
-            .data
-            .try_as_move_mut()
-            .unwrap()
-            .set_clock_timestamp_ms_unsafe(genesis_chain_parameters.chain_start_timestamp_ms);
-    }
-
+    let store = Arc::get_mut(store).expect("only one reference to store");
     store.finish(written);
 
     Ok(())

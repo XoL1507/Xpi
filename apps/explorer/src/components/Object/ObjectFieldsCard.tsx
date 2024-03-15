@@ -132,7 +132,7 @@ export function ObjectFieldsCard({
 				)}
 				<div
 					className={clsx(
-						'flex max-h-44 flex-col overflow-y-auto pr-2 md:max-h-96',
+						'flex max-h-44 flex-col gap-4 overflow-y-auto pl-3 pr-2 md:max-h-80',
 						renderSearchBar && 'mt-4',
 					)}
 				>
@@ -140,15 +140,10 @@ export function ObjectFieldsCard({
 						<button
 							type="button"
 							key={name}
-							className="mt-0.5 rounded-lg border border-transparent p-2.5 hover:border-sui-primaryBlue2023/20 hover:bg-white/60"
+							className="mt-0.5"
 							onClick={() => onFieldsNameClick(name)}
 						>
-							<Description
-								title={name}
-								titleVariant="body/medium"
-								titleColor="steel-darker"
-								alignItems="center"
-							>
+							<Description title={name} titleVariant="body/medium" titleColor="steel-darker">
 								<Text uppercase variant="subtitle/normal" color="steel" truncate>
 									{getFieldTypeValue(type, objectType).displayName}
 								</Text>

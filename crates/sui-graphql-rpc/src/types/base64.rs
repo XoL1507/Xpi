@@ -8,7 +8,7 @@ use fastcrypto::encoding::Base64 as FastCryptoBase64;
 use fastcrypto::encoding::Encoding as FastCryptoEncoding;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Base64(pub(crate) Vec<u8>);
+pub(crate) struct Base64(Vec<u8>);
 
 #[Scalar]
 impl ScalarType for Base64 {
@@ -43,15 +43,9 @@ impl From<&Vec<u8>> for Base64 {
     }
 }
 
-impl From<&[u8]> for Base64 {
-    fn from(bytes: &[u8]) -> Self {
-        Base64(bytes.to_vec())
-    }
-}
-
 impl From<Vec<u8>> for Base64 {
     fn from(bytes: Vec<u8>) -> Self {
-        Base64(bytes)
+        Base64::from(&bytes)
     }
 }
 

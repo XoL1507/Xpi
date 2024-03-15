@@ -1,15 +1,15 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { type AccountType, type SerializedUIAccount } from '_src/background/accounts/Account';
-import { API_ENV } from '_src/shared/api-env';
-import { getSuiClient } from '_src/shared/sui-client';
 import { type SuiClient } from '@mysten/sui.js/client';
-
-import type { BackgroundClient } from './background-client';
+import { type WalletSigner } from './WalletSigner';
 import { BackgroundServiceSigner } from './background-client/BackgroundServiceSigner';
 import { queryClient } from './helpers/queryClient';
-import { type WalletSigner } from './WalletSigner';
+import { type SerializedUIAccount } from '_src/background/accounts/Account';
+import { API_ENV } from '_src/shared/api-env';
+
+import { getSuiClient } from '_src/shared/sui-client';
+import type { BackgroundClient } from './background-client';
 
 type EnvInfo = {
 	name: string;
@@ -40,7 +40,7 @@ export const generateActiveNetworkList = (): NetworkTypes[] => {
 	return Object.values(API_ENV);
 };
 
-const accountTypesWithBackgroundSigner: AccountType[] = ['mnemonic-derived', 'imported', 'zkLogin'];
+const accountTypesWithBackgroundSigner = ['mnemonic-derived', 'imported', 'zk'];
 
 export default class ApiProvider {
 	private _apiFullNodeProvider?: SuiClient;
@@ -112,5 +112,3 @@ export default class ApiProvider {
 		return this._signerByAddress.get(key)!;
 	}
 }
-
-export const walletApiProvider = new ApiProvider();

@@ -4,9 +4,8 @@
 import type { WalletWithRequiredFeatures } from '@mysten/wallet-standard';
 import { getWallets } from '@mysten/wallet-standard';
 import { useEffect } from 'react';
-
-import { getRegisteredWallets } from '../../utils/walletUtils.js';
 import { useWalletStore } from './useWalletStore.js';
+import { getRegisteredWallets } from '../../utils/walletUtils.js';
 
 /**
  * Internal hook for easily handling the addition and removal of new wallets.

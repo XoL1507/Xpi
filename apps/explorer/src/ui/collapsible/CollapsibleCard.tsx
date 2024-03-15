@@ -27,12 +27,8 @@ function CollapsibleCardHeader({ open, size, title, collapsible }: CollapsibleCa
 		<div
 			className={clsx(
 				'flex w-full justify-between',
-				size === 'md' ? 'px-6' : 'px-4',
-				size === 'sm' && 'pb-4.5',
-				open && size === 'md' && 'pb-6 pt-7',
-				open && size === 'sm' && 'pt-4.5',
-				!open && size === 'md' && 'py-7',
-				!open && size === 'sm' && 'py-4.5',
+				open && size === 'md' && 'pb-6',
+				open && size === 'sm' && 'pb-4.5',
 			)}
 		>
 			{typeof title === 'string' ? (
@@ -70,7 +66,6 @@ export interface CollapsibleCardProps extends Omit<CardProps, 'size'> {
 	collapsible?: boolean;
 	size?: Size;
 	initialClose?: boolean;
-	growOnHover?: boolean;
 }
 
 export function CollapsibleCard({
@@ -80,35 +75,20 @@ export function CollapsibleCard({
 	size = 'md',
 	children,
 	initialClose,
-	growOnHover,
 	...cardProps
 }: CollapsibleCardProps) {
 	const [open, setOpen] = useState(!initialClose);
 	return (
 		<div className="relative w-full">
-			<Card
-				rounded="2xl"
-				border="gray45"
-				bg="white"
-				spacing="none"
-				growOnHover={growOnHover && !open}
-				{...cardProps}
-			>
+			<Card rounded="2xl" border="gray45" bg="white" spacing="none" {...cardProps}>
 				<Collapsible.Root
 					open={open}
 					onOpenChange={setOpen}
-					className={clsx(
-						!title && size === 'md' && 'pt-7',
-						!title && size === 'sm' && 'pt-4.5',
-						open && size === 'md' && 'pb-7',
-						open && size === 'sm' && 'pb-4.5',
-					)}
+					className={clsx(size === 'md' ? 'px-6 py-7' : 'px-4 py-4.5')}
 				>
 					<CollapsibleCardHeader open={open} size={size} title={title} collapsible={collapsible} />
 
-					<div className={clsx(size === 'md' ? 'px-6' : 'px-4')}>
-						<Collapsible.Content>{children}</Collapsible.Content>
-					</div>
+					<Collapsible.Content>{children}</Collapsible.Content>
 				</Collapsible.Root>
 
 				{footer && (

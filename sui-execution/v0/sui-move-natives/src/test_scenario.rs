@@ -9,9 +9,9 @@ use linked_hash_map::LinkedHashMap;
 use move_binary_format::errors::{PartialVMError, PartialVMResult};
 use move_core_types::{
     account_address::AccountAddress,
-    annotated_value::{MoveStruct, MoveValue},
     identifier::Identifier,
     language_storage::StructTag,
+    value::{MoveStruct, MoveValue},
     vm_status::StatusCode,
 };
 use move_vm_runtime::native_functions::NativeContext;
@@ -138,9 +138,9 @@ pub fn end_transaction(
                 inventories
                     .address_inventories
                     .entry(a)
-                    .or_default()
+                    .or_insert_with(BTreeMap::new)
                     .entry(ty)
-                    .or_default()
+                    .or_insert_with(Set::new)
                     .insert(id, ());
             }
             Owner::ObjectOwner(_) => (),
@@ -148,14 +148,14 @@ pub fn end_transaction(
                 inventories
                     .shared_inventory
                     .entry(ty)
-                    .or_default()
+                    .or_insert_with(Set::new)
                     .insert(id, ());
             }
             Owner::Immutable => {
                 inventories
                     .immutable_inventory
                     .entry(ty)
-                    .or_default()
+                    .or_insert_with(Set::new)
                     .insert(id, ());
             }
         }
@@ -660,48 +660,71 @@ fn find_all_wrapped_objects<'a>(
         let blob = value.borrow().simple_serialize(&layout).unwrap();
         let move_value = MoveValue::simple_deserialize(&blob, &annotated_layout).unwrap();
         let uid = UID::type_();
-        visit_structs(&move_value, |depth, tag, fields| {
-            if tag != &uid {
-                return if depth == 0 {
-                    debug_assert!(!fields.is_empty());
-                    // all object values so the first field is a UID that should be skipped
-                    &fields[1..]
-                } else {
-                    fields
-                };
-            }
-            debug_assert!(fields.len() == 1);
-            let id = &fields[0].1;
-            let addr_field = match &id {
-                MoveValue::Struct(MoveStruct { fields, .. }) => {
-                    debug_assert!(fields.len() == 1);
-                    &fields[0].1
+        visit_structs(
+            &move_value,
+            |_, _| panic!("unexpected struct without a struct tag. Layout: {}", layout),
+            |_, _| panic!("unexpected struct without a struct tag. Layout: {}", layout),
+            |depth, tag, fields| {
+                if tag != &uid {
+                    return if depth == 0 {
+                        debug_assert!(!fields.is_empty());
+                        // all object values so the first field is a UID that should be skipped
+                        &fields[1..]
+                    } else {
+                        fields
+                    };
                 }
-                v => unreachable!("Not reachable via Move type system: {:?}", v),
-            };
-            let addr = match addr_field {
-                MoveValue::Address(a) => *a,
-                v => unreachable!("Not reachable via Move type system: {:?}", v),
-            };
-            ids.insert(addr.into());
-            fields
-        })
+                debug_assert!(fields.len() == 1);
+                let id = &fields[0].1;
+                let addr_field = match &id {
+                    MoveValue::Struct(MoveStruct::WithTypes { fields, .. }) => {
+                        debug_assert!(fields.len() == 1);
+                        &fields[0].1
+                    }
+                    v => unreachable!("Not reachable via Move type system: {:?}", v),
+                };
+                let addr = match addr_field {
+                    MoveValue::Address(a) => *a,
+                    v => unreachable!("Not reachable via Move type system: {:?}", v),
+                };
+                ids.insert(addr.into());
+                fields
+            },
+        )
     }
 }
 
-fn visit_structs<FVisitTypes>(move_value: &MoveValue, mut visit_with_types: FVisitTypes)
-where
+fn visit_structs<FVisitTypes>(
+    move_value: &MoveValue,
+    mut visit_runtime: impl FnMut(/* value depth */ usize, &Vec<MoveValue>) -> &[MoveValue],
+    mut visit_with_fields: impl FnMut(
+        /* value depth */ usize,
+        &Vec<(Identifier, MoveValue)>,
+    ) -> &[(Identifier, MoveValue)],
+    mut visit_with_types: FVisitTypes,
+) where
     for<'a> FVisitTypes: FnMut(
         /* value depth */ usize,
         &StructTag,
         &'a Vec<(Identifier, MoveValue)>,
     ) -> &'a [(Identifier, MoveValue)],
 {
-    visit_structs_impl(move_value, &mut visit_with_types, 0)
+    visit_structs_impl(
+        move_value,
+        &mut visit_runtime,
+        &mut visit_with_fields,
+        &mut visit_with_types,
+        0,
+    )
 }
 
 fn visit_structs_impl<FVisitTypes>(
     move_value: &MoveValue,
+    visit_runtime: &mut impl FnMut(/* value depth */ usize, &Vec<MoveValue>) -> &[MoveValue],
+    visit_with_fields: &mut impl FnMut(
+        /* value depth */ usize,
+        &Vec<(Identifier, MoveValue)>,
+    ) -> &[(Identifier, MoveValue)],
     visit_with_types: &mut FVisitTypes,
     depth: usize,
 ) where
@@ -724,14 +747,52 @@ fn visit_structs_impl<FVisitTypes>(
         | MoveValue::Signer(_) => (),
         MoveValue::Vector(vs) => {
             for v in vs {
-                visit_structs_impl(v, visit_with_types, next_depth)
+                visit_structs_impl(
+                    v,
+                    visit_runtime,
+                    visit_with_fields,
+                    visit_with_types,
+                    next_depth,
+                )
             }
         }
-        MoveValue::Struct(MoveStruct { type_, fields }) => {
-            let fields = visit_with_types(depth, type_, fields);
-            for (_, v) in fields {
-                visit_structs_impl(v, visit_with_types, next_depth)
+        MoveValue::Struct(s) => match s {
+            MoveStruct::Runtime(vs) => {
+                let vs = visit_runtime(depth, vs);
+                for v in vs {
+                    visit_structs_impl(
+                        v,
+                        visit_runtime,
+                        visit_with_fields,
+                        visit_with_types,
+                        next_depth,
+                    )
+                }
             }
-        }
+            MoveStruct::WithFields(fields) => {
+                let fields = visit_with_fields(depth, fields);
+                for (_, v) in fields {
+                    visit_structs_impl(
+                        v,
+                        visit_runtime,
+                        visit_with_fields,
+                        visit_with_types,
+                        next_depth,
+                    )
+                }
+            }
+            MoveStruct::WithTypes { type_, fields } => {
+                let fields = visit_with_types(depth, type_, fields);
+                for (_, v) in fields {
+                    visit_structs_impl(
+                        v,
+                        visit_runtime,
+                        visit_with_fields,
+                        visit_with_types,
+                        next_depth,
+                    )
+                }
+            }
+        },
     }
 }

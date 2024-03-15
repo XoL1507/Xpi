@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use mysten_metrics::metered_channel::Sender;
-use mysten_metrics::{monitored_scope, spawn_logged_monitored_task};
+use mysten_metrics::spawn_logged_monitored_task;
 use mysten_network::server::Server;
 use mysten_network::Multiaddr;
 use std::sync::Arc;
@@ -141,22 +141,15 @@ impl<V: TransactionValidator> Transactions for TxReceiverHandler<V> {
         &self,
         request: Request<TransactionProto>,
     ) -> Result<Response<Empty>, Status> {
-        let _scope = monitored_scope("SubmitTransaction");
         let transaction = request.into_inner().transaction;
-
-        let validate_scope = monitored_scope("SubmitTransaction_ValidateTx");
         if self.validator.validate(transaction.as_ref()).is_err() {
             return Err(Status::invalid_argument("Invalid transaction"));
         }
-        drop(validate_scope);
-
         // Send the transaction to Narwhal via the local client.
-        let submit_scope = monitored_scope("SubmitTransaction_SubmitTx");
         self.local_client
             .submit_transaction(transaction.to_vec())
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
-        drop(submit_scope);
         Ok(Response::new(Empty {}))
     }
 
@@ -165,31 +158,26 @@ impl<V: TransactionValidator> Transactions for TxReceiverHandler<V> {
         request: Request<tonic::Streaming<types::TransactionProto>>,
     ) -> Result<Response<types::Empty>, Status> {
         let mut transactions = request.into_inner();
-        let mut requests = FuturesUnordered::new();
+        let mut reqeusts = FuturesUnordered::new();
 
-        let _scope = monitored_scope("SubmitTransactionStream");
         while let Some(Ok(txn)) = transactions.next().await {
-            let validate_scope = monitored_scope("SubmitTransactionStream_ValidateTx");
             if let Err(err) = self.validator.validate(txn.transaction.as_ref()) {
                 // If the transaction is invalid (often cryptographically), better to drop the client
                 return Err(Status::invalid_argument(format!(
                     "Stream contains an invalid transaction {err}"
                 )));
             }
-            drop(validate_scope);
             // Send the transaction to Narwhal via the local client.
             // Note that here we do not wait for a response because this would
             // mean that we process only a single message from this stream at a
             // time. Instead we gather them and resolve them once the stream is over.
-            let submit_scope = monitored_scope("SubmitTransactionStream_SubmitTx");
-            requests.push(
+            reqeusts.push(
                 self.local_client
                     .submit_transaction(txn.transaction.to_vec()),
             );
-            drop(submit_scope);
         }
 
-        while let Some(result) = requests.next().await {
+        while let Some(result) = reqeusts.next().await {
             if let Err(e) = result {
                 return Err(Status::internal(e.to_string()));
             }

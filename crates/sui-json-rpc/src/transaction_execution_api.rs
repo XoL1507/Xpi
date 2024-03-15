@@ -15,7 +15,6 @@ use shared_crypto::intent::{AppId, Intent, IntentMessage, IntentScope, IntentVer
 use sui_core::authority::AuthorityState;
 use sui_core::authority_client::NetworkAuthorityClient;
 use sui_core::transaction_orchestrator::TransactiondOrchestrator;
-use sui_json_rpc_api::{JsonRpcMetrics, WriteApiOpenRpc, WriteApiServer};
 use sui_json_rpc_types::{
     DevInspectResults, DryRunTransactionBlockResponse, SuiTransactionBlock,
     SuiTransactionBlockEvents, SuiTransactionBlockResponse, SuiTransactionBlockResponseOptions,
@@ -35,6 +34,8 @@ use sui_types::transaction::{
 };
 use tracing::instrument;
 
+use crate::api::JsonRpcMetrics;
+use crate::api::WriteApiServer;
 use crate::authority_state::StateRead;
 use crate::error::{Error, SuiRpcInputError};
 use crate::{
@@ -103,7 +104,7 @@ impl TransactionExecutionApi {
         for sig in signatures {
             sigs.push(GenericSignature::from_bytes(&sig.to_vec()?)?);
         }
-        let txn = Transaction::from_generic_sig_data(tx_data, sigs);
+        let txn = Transaction::from_generic_sig_data(tx_data, Intent::sui_transaction(), sigs);
         let raw_transaction = if opts.show_raw_input {
             bcs::to_bytes(txn.data())?
         } else {
@@ -313,6 +314,6 @@ impl SuiRpcModule for TransactionExecutionApi {
     }
 
     fn rpc_doc_module() -> Module {
-        WriteApiOpenRpc::module_doc()
+        crate::api::WriteApiOpenRpc::module_doc()
     }
 }

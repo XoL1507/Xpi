@@ -1,67 +1,47 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::object_store::{
-    ObjectStoreDeleteExt, ObjectStoreGetExt, ObjectStoreListExt, ObjectStorePutExt,
-};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context};
 use backoff::future::retry;
 use bytes::Bytes;
 use futures::StreamExt;
-use futures::TryStreamExt;
-use indicatif::ProgressBar;
-use itertools::Itertools;
 use object_store::path::Path;
-use object_store::{DynObjectStore, Error, ObjectStore};
-use serde::{Deserialize, Serialize};
+use object_store::{DynObjectStore, Error};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
-use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::Instant;
 use tracing::{error, warn};
 use url::Url;
 
-pub const MANIFEST_FILENAME: &str = "MANIFEST";
-
-#[derive(Serialize, Deserialize)]
-
-pub struct Manifest {
-    available_epochs: Vec<u64>,
-}
-
-impl Manifest {
-    pub fn new(available_epochs: Vec<u64>) -> Self {
-        Manifest { available_epochs }
-    }
-}
-
-pub async fn get<S: ObjectStoreGetExt>(store: &S, src: &Path) -> Result<Bytes> {
-    let bytes = retry(backoff::ExponentialBackoff::default(), || async {
-        store.get_bytes(src).await.map_err(|e| {
+pub async fn get(location: &Path, from: Arc<DynObjectStore>) -> Result<Bytes, object_store::Error> {
+    let backoff = backoff::ExponentialBackoff::default();
+    let bytes = retry(backoff, || async {
+        from.get(location).await.map_err(|e| {
             error!("Failed to read file from object store with error: {:?}", &e);
             backoff::Error::transient(e)
         })
     })
+    .await?
+    .bytes()
     .await?;
     Ok(bytes)
 }
 
-pub async fn exists<S: ObjectStoreGetExt>(store: &S, src: &Path) -> bool {
-    store.get_bytes(src).await.is_ok()
-}
-
-pub async fn put<S: ObjectStorePutExt>(store: &S, src: &Path, bytes: Bytes) -> Result<()> {
-    retry(backoff::ExponentialBackoff::default(), || async {
+pub async fn put(
+    location: &Path,
+    bytes: Bytes,
+    to: Arc<DynObjectStore>,
+) -> Result<(), object_store::Error> {
+    let backoff = backoff::ExponentialBackoff::default();
+    retry(backoff, || async {
         if !bytes.is_empty() {
-            store.put_bytes(src, bytes.clone()).await.map_err(|e| {
+            to.put(location, bytes.clone()).await.map_err(|e| {
                 error!("Failed to write file to object store with error: {:?}", &e);
                 backoff::Error::transient(e)
             })
         } else {
-            warn!("Not copying empty file: {:?}", src);
+            warn!("Not copying empty file: {:?}", location);
             Ok(())
         }
     })
@@ -69,87 +49,77 @@ pub async fn put<S: ObjectStorePutExt>(store: &S, src: &Path, bytes: Bytes) -> R
     Ok(())
 }
 
-pub async fn copy_file<S: ObjectStoreGetExt, D: ObjectStorePutExt>(
-    src: &Path,
-    dest: &Path,
-    src_store: &S,
-    dest_store: &D,
-) -> Result<()> {
-    let bytes = get(src_store, src).await?;
+pub async fn copy_file(
+    path_in: Path,
+    path_out: Path,
+    from: Arc<DynObjectStore>,
+    to: Arc<DynObjectStore>,
+) -> Result<(), object_store::Error> {
+    let bytes = from.get(&path_in).await?.bytes().await?;
     if !bytes.is_empty() {
-        put(dest_store, dest, bytes).await
+        put(&path_out, bytes, to).await
     } else {
-        warn!("Not copying empty file: {:?}", src);
+        warn!("Not copying empty file: {:?}", path_in);
         Ok(())
     }
 }
 
-pub async fn copy_files<S: ObjectStoreGetExt, D: ObjectStorePutExt>(
-    src: &[Path],
-    dest: &[Path],
-    src_store: &S,
-    dest_store: &D,
+pub async fn copy_files(
+    files_in: &[Path],
+    files_out: &[Path],
+    from: Arc<DynObjectStore>,
+    to: Arc<DynObjectStore>,
     concurrency: NonZeroUsize,
-    progress_bar: Option<ProgressBar>,
-) -> Result<Vec<()>> {
-    let mut instant = Instant::now();
-    let progress_bar_clone = progress_bar.clone();
-    let results = futures::stream::iter(src.iter().zip(dest.iter()))
-        .map(|(path_in, path_out)| async move {
-            let ret = copy_file(path_in, path_out, src_store, dest_store).await;
-            Ok((path_out.clone(), ret))
-        })
-        .boxed()
-        .buffer_unordered(concurrency.get())
-        .try_for_each(|(path, ret)| {
-            if let Some(progress_bar_clone) = &progress_bar_clone {
-                progress_bar_clone.inc(1);
-                progress_bar_clone.set_message(format!("file: {}", path));
-                instant = Instant::now();
-            }
-            futures::future::ready(ret)
-        })
-        .await;
-    Ok(results.into_iter().collect())
+) -> Result<Vec<()>, object_store::Error> {
+    let results: Vec<Result<(), object_store::Error>> =
+        futures::stream::iter(files_in.iter().zip(files_out.iter()))
+            .map(|(path_in, path_out)| {
+                copy_file(path_in.clone(), path_out.clone(), from.clone(), to.clone())
+            })
+            .boxed()
+            .buffer_unordered(concurrency.get())
+            .collect()
+            .await;
+    results.into_iter().collect()
 }
 
-pub async fn copy_recursively<S: ObjectStoreGetExt + ObjectStoreListExt, D: ObjectStorePutExt>(
+pub async fn copy_recursively(
     dir: &Path,
-    src_store: &S,
-    dest_store: &D,
+    from: Arc<DynObjectStore>,
+    to: Arc<DynObjectStore>,
     concurrency: NonZeroUsize,
-) -> Result<Vec<()>> {
+) -> Result<Vec<()>, object_store::Error> {
     let mut input_paths = vec![];
     let mut output_paths = vec![];
-    let mut paths = src_store.list_objects(Some(dir)).await?;
+    let mut paths = from.list(Some(dir)).await?;
     while let Some(res) = paths.next().await {
         if let Ok(object_metadata) = res {
             input_paths.push(object_metadata.location.clone());
             output_paths.push(object_metadata.location);
         } else {
-            return Err(res.err().unwrap().into());
+            return Err(res.err().unwrap());
         }
     }
     copy_files(
         &input_paths,
         &output_paths,
-        src_store,
-        dest_store,
+        from.clone(),
+        to.clone(),
         concurrency,
-        None,
     )
     .await
 }
 
-pub async fn delete_files<S: ObjectStoreDeleteExt>(
+pub async fn delete_files(
     files: &[Path],
-    store: &S,
+    store: Arc<DynObjectStore>,
     concurrency: NonZeroUsize,
-) -> Result<Vec<()>> {
-    let results: Vec<Result<()>> = futures::stream::iter(files)
+) -> Result<Vec<()>, object_store::Error> {
+    let results: Vec<Result<(), object_store::Error>> = futures::stream::iter(files)
         .map(|f| {
-            retry(backoff::ExponentialBackoff::default(), || async {
-                store.delete_object(f).await.map_err(|e| {
+            let backoff = backoff::ExponentialBackoff::default();
+            retry(backoff, || async {
+                store.clone().delete(f).await.map_err(|e| {
                     error!("Failed to delete file on object store with error: {:?}", &e);
                     backoff::Error::transient(e)
                 })
@@ -162,21 +132,21 @@ pub async fn delete_files<S: ObjectStoreDeleteExt>(
     results.into_iter().collect()
 }
 
-pub async fn delete_recursively<S: ObjectStoreDeleteExt + ObjectStoreListExt>(
+pub async fn delete_recursively(
     path: &Path,
-    store: &S,
+    store: Arc<DynObjectStore>,
     concurrency: NonZeroUsize,
-) -> Result<Vec<()>> {
+) -> Result<Vec<()>, object_store::Error> {
     let mut paths_to_delete = vec![];
-    let mut paths = store.list_objects(Some(path)).await?;
+    let mut paths = store.list(Some(path)).await?;
     while let Some(res) = paths.next().await {
         if let Ok(object_metadata) = res {
             paths_to_delete.push(object_metadata.location);
         } else {
-            return Err(res.err().unwrap().into());
+            return Err(res.err().unwrap());
         }
     }
-    delete_files(&paths_to_delete, store, concurrency).await
+    delete_files(&paths_to_delete, store.clone(), concurrency).await
 }
 
 pub fn path_to_filesystem(local_dir_path: PathBuf, location: &Path) -> anyhow::Result<PathBuf> {
@@ -198,10 +168,9 @@ pub fn path_to_filesystem(local_dir_path: PathBuf, location: &Path) -> anyhow::R
 /// and return a map of epoch number to the directory path
 pub async fn find_all_dirs_with_epoch_prefix(
     store: &Arc<DynObjectStore>,
-    prefix: Option<&Path>,
 ) -> anyhow::Result<BTreeMap<u64, Path>> {
     let mut dirs = BTreeMap::new();
-    let entries = store.list_with_delimiter(prefix).await?;
+    let entries = store.list_with_delimiter(None).await?;
     for entry in entries.common_prefixes {
         if let Some(filename) = entry.filename() {
             if !filename.starts_with("epoch_") {
@@ -217,77 +186,6 @@ pub async fn find_all_dirs_with_epoch_prefix(
     Ok(dirs)
 }
 
-pub async fn list_all_epochs(object_store: Arc<DynObjectStore>) -> Result<Vec<u64>> {
-    let remote_epoch_dirs = find_all_dirs_with_epoch_prefix(&object_store, None).await?;
-    let mut out = vec![];
-    let mut success_marker_found = false;
-    for (epoch, path) in remote_epoch_dirs.iter().sorted() {
-        let success_marker = path.child("_SUCCESS");
-        let get_result = object_store.get(&success_marker).await;
-        match get_result {
-            Err(_) => {
-                if !success_marker_found {
-                    error!("No success marker found for epoch: {epoch}");
-                }
-            }
-            Ok(_) => {
-                out.push(*epoch);
-                success_marker_found = true;
-            }
-        }
-    }
-    Ok(out)
-}
-
-pub async fn run_manifest_update_loop(
-    store: Arc<DynObjectStore>,
-    mut recv: tokio::sync::broadcast::Receiver<()>,
-) -> Result<()> {
-    let mut update_interval = tokio::time::interval(Duration::from_secs(300));
-    loop {
-        tokio::select! {
-            _now = update_interval.tick() => {
-                if let Ok(epochs) = list_all_epochs(store.clone()).await {
-                    let manifest_path = Path::from(MANIFEST_FILENAME);
-                    let manifest = Manifest::new(epochs);
-                    let bytes = serde_json::to_string(&manifest)?;
-                    put(&store, &manifest_path, Bytes::from(bytes)).await?;
-                }
-            },
-             _ = recv.recv() => break,
-        }
-    }
-    Ok(())
-}
-
-/// This function will find all child directories in the input store which are of the form "epoch_num"
-/// and return a map of epoch number to the directory path
-pub async fn find_all_files_with_epoch_prefix(
-    store: &Arc<DynObjectStore>,
-    prefix: Option<&Path>,
-) -> anyhow::Result<Vec<Range<u64>>> {
-    let mut ranges = Vec::new();
-    let entries = store.list_with_delimiter(prefix).await?;
-    for entry in entries.objects {
-        let checkpoint_seq_range = entry
-            .location
-            .filename()
-            .ok_or(anyhow!("Illegal file name"))?
-            .split_once('.')
-            .context("Failed to split dir name")?
-            .0
-            .split_once('_')
-            .context("Failed to split dir name")
-            .map(|(start, end)| Range {
-                start: start.parse::<u64>().unwrap(),
-                end: end.parse::<u64>().unwrap(),
-            })?;
-
-        ranges.push(checkpoint_seq_range);
-    }
-    Ok(ranges)
-}
-
 /// This function will find missing epoch directories in the input store and return a list of such
 /// epoch numbers. If the highest epoch directory in the store is `epoch_N` then it is expected that the
 /// store will have all epoch directories from `epoch_0` to `epoch_N`. Additionally, any epoch directory
@@ -297,7 +195,7 @@ pub async fn find_missing_epochs_dirs(
     store: &Arc<DynObjectStore>,
     success_marker: &str,
 ) -> anyhow::Result<Vec<u64>> {
-    let remote_checkpoints_by_epoch = find_all_dirs_with_epoch_prefix(store, None).await?;
+    let remote_checkpoints_by_epoch = find_all_dirs_with_epoch_prefix(store).await?;
     let mut dirs: Vec<_> = remote_checkpoints_by_epoch.iter().collect();
     dirs.sort_by_key(|(epoch_num, _path)| *epoch_num);
     let mut candidate_epoch: u64 = 0;
@@ -334,46 +232,9 @@ pub fn get_path(prefix: &str) -> Path {
     Path::from(prefix)
 }
 
-// Snapshot MANIFEST file is very simple. Just a newline delimited list of all paths in the snapshot directory
-// this simplicty enables easy parsing for scripts to download snapshots
-pub async fn write_snapshot_manifest<S: ObjectStoreListExt + ObjectStorePutExt>(
-    dir: &Path,
-    store: &S,
-    epoch_prefix: String,
-) -> Result<()> {
-    let mut file_names = vec![];
-    let mut paths = store.list_objects(Some(dir)).await?;
-    while let Some(res) = paths.next().await {
-        if let Ok(object_metadata) = res {
-            // trim the "epoch_XX/" dir prefix here
-            let mut path_str = object_metadata.location.to_string();
-            if path_str.starts_with(&epoch_prefix) {
-                path_str = String::from(&path_str[epoch_prefix.len()..]);
-                file_names.push(path_str);
-            } else {
-                warn!("{path_str}, should be coming from the files in the {epoch_prefix} dir",)
-            }
-        } else {
-            return Err(res.err().unwrap().into());
-        }
-    }
-
-    let bytes = Bytes::from(file_names.join("\n"));
-    put(
-        store,
-        &Path::from(format!("{}/{}", dir, MANIFEST_FILENAME)),
-        bytes,
-    )
-    .await?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::object_store::util::{
-        copy_recursively, delete_recursively, write_snapshot_manifest, MANIFEST_FILENAME,
-    };
+    use crate::object_store::util::{copy_recursively, delete_recursively};
     use crate::object_store::{ObjectStoreConfig, ObjectStoreType};
     use object_store::path::Path;
     use std::fs;
@@ -412,8 +273,8 @@ mod tests {
 
         copy_recursively(
             &Path::from("child"),
-            &input_store,
-            &output_store,
+            input_store,
+            output_store,
             NonZeroUsize::new(1).unwrap(),
         )
         .await?;
@@ -431,43 +292,6 @@ mod tests {
         let content =
             fs::read_to_string(output_path.join("child").join("grand_child").join("file2"))?;
         assert_eq!(content, "Lorem ipsum");
-        Ok(())
-    }
-
-    #[tokio::test]
-    pub async fn test_write_snapshot_manifest() -> anyhow::Result<()> {
-        let input = TempDir::new()?;
-        let input_path = input.path();
-        let epoch_0 = input_path.join("epoch_0");
-        fs::create_dir(&epoch_0)?;
-        let file1 = epoch_0.join("file1");
-        fs::write(file1, b"Lorem ipsum")?;
-        let file2 = epoch_0.join("file2");
-        fs::write(file2, b"Lorem ipsum")?;
-        let grandchild = epoch_0.join("grand_child");
-        fs::create_dir(&grandchild)?;
-        let file3 = grandchild.join("file2.tar.gz");
-        fs::write(file3, b"Lorem ipsum")?;
-
-        let input_store = ObjectStoreConfig {
-            object_store: Some(ObjectStoreType::File),
-            directory: Some(input_path.to_path_buf()),
-            ..Default::default()
-        }
-        .make()?;
-
-        write_snapshot_manifest(
-            &Path::from("epoch_0"),
-            &input_store,
-            String::from("epoch_0/"),
-        )
-        .await?;
-
-        assert!(input_path.join("epoch_0").join(MANIFEST_FILENAME).exists());
-        let content = fs::read_to_string(input_path.join("epoch_0").join(MANIFEST_FILENAME))?;
-        assert!(content.contains("file2"));
-        assert!(content.contains("file1"));
-        assert!(content.contains("grand_child/file2.tar.gz"));
         Ok(())
     }
 
@@ -493,7 +317,7 @@ mod tests {
 
         delete_recursively(
             &Path::from("child"),
-            &input_store,
+            input_store,
             NonZeroUsize::new(1).unwrap(),
         )
         .await?;

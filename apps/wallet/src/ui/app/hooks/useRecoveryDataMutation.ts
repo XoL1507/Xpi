@@ -1,11 +1,10 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { type PasswordRecoveryData } from '_src/shared/messaging/messages/payloads/MethodPayload';
 import { useMutation } from '@tanstack/react-query';
-
-import { useForgotPasswordContext } from '../pages/accounts/forgot-password/ForgotPasswordPage';
 import { useBackgroundClient } from './useBackgroundClient';
+import { useForgotPasswordContext } from '../pages/accounts/forgot-password/ForgotPasswordPage';
+import { type PasswordRecoveryData } from '_src/shared/messaging/messages/payloads/MethodPayload';
 
 export function useRecoveryDataMutation() {
 	const backgroundClient = useBackgroundClient();

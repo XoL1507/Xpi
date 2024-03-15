@@ -1,26 +1,25 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { entropyToSerialized, mnemonicToEntropy } from '_src/shared/utils/bip39';
-import { ImportRecoveryPhraseForm } from '_src/ui/app/components/accounts/ImportRecoveryPhraseForm';
-import { useRecoveryDataMutation } from '_src/ui/app/hooks/useRecoveryDataMutation';
 import { useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-
 import { useAccountSources } from '../../../hooks/useAccountSources';
 import { Heading } from '../../../shared/heading';
 import { Text } from '../../../shared/text';
+import { entropyToSerialized, mnemonicToEntropy } from '_src/shared/utils/bip39';
+import { ImportRecoveryPhraseForm } from '_src/ui/app/components/accounts/ImportRecoveryPhraseForm';
+import { useRecoveryDataMutation } from '_src/ui/app/hooks/useRecoveryDataMutation';
 
 export function RecoverPage() {
 	const allAccountSources = useAccountSources();
 	const navigate = useNavigate();
 	const mnemonicAccountSource = allAccountSources.data?.find(({ type }) => type === 'mnemonic');
 	useEffect(() => {
-		if (!allAccountSources.isPending && !mnemonicAccountSource) {
+		if (!allAccountSources.isLoading && !mnemonicAccountSource) {
 			navigate('/', { replace: true });
 		}
-	}, [allAccountSources.isPending, mnemonicAccountSource, navigate]);
+	}, [allAccountSources.isLoading, mnemonicAccountSource, navigate]);
 	const recoveryDataMutation = useRecoveryDataMutation();
 	if (!mnemonicAccountSource) {
 		return null;

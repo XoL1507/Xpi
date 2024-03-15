@@ -10,7 +10,6 @@
 //!
 //! ```
 //! use typed_store::rocks::*;
-//! use typed_store::*;
 //! use typed_store::test_db::*;
 //! use typed_store::sally::SallyDBOptions;
 //! use typed_store_derive::SallyDB;
@@ -52,11 +51,10 @@
 use crate::{
     rocks::{
         default_db_options, keys::Keys, values::Values, DBBatch, DBMap, DBOptions,
-        RocksDBAccessType,
+        RocksDBAccessType, TypedStoreError,
     },
     test_db::{TestDB, TestDBKeys, TestDBValues, TestDBWriteBatch},
     traits::{AsyncMap, Map},
-    TypedStoreError,
 };
 
 use crate::rocks::safe_iter::{SafeIter as RocksDBIter, SafeRevIter};

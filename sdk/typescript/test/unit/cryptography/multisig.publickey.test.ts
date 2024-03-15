@@ -1,26 +1,29 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { fromB64 } from '@mysten/bcs';
-import { blake2b } from '@noble/hashes/blake2b';
-import { bytesToHex } from '@noble/hashes/utils';
-import { beforeAll, describe, expect, it } from 'vitest';
-
-import { bcs } from '../../../src/bcs/index.js';
-import { IntentScope, messageWithIntent } from '../../../src/cryptography/intent';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { PublicKey } from '../../../src/cryptography/publickey';
-import { SIGNATURE_SCHEME_TO_FLAG } from '../../../src/cryptography/signature-scheme.js';
-import { parseSerializedSignature } from '../../../src/cryptography/signature.js';
 import { Ed25519Keypair, Ed25519PublicKey } from '../../../src/keypairs/ed25519';
 import { Secp256k1Keypair } from '../../../src/keypairs/secp256k1';
 import { Secp256r1Keypair } from '../../../src/keypairs/secp256r1';
-import {
-	MAX_SIGNER_IN_MULTISIG,
-	MultiSigPublicKey,
-	MultiSigStruct,
-	parsePartialSignatures,
-} from '../../../src/multisig/publickey';
+import { bcs } from '../../../src/bcs/index.js';
+import { IntentScope, messageWithIntent } from '../../../src/cryptography/intent';
+import { decodeMultiSig } from '../../../src/cryptography/multisig';
+import { bytesToHex } from '@noble/hashes/utils';
+import { blake2b } from '@noble/hashes/blake2b';
 import { normalizeSuiAddress } from '../../../src/utils/sui-types.js';
+import {
+	MultiSigPublicKey,
+	MAX_SIGNER_IN_MULTISIG,
+	parsePartialSignatures,
+	MultiSigStruct,
+} from '../../../src/multisig/publickey';
+import {
+	parseSerializedSignature,
+	SIGNATURE_SCHEME_TO_FLAG,
+} from '../../../src/cryptography/signature';
+import { builder } from '../../../src/builder/bcs.js';
+import { fromB64 } from '@mysten/bcs';
 
 describe('Publickey', () => {
 	let k1: Ed25519Keypair,
@@ -246,7 +249,7 @@ describe('Publickey', () => {
 		const maxLength = 1 + (64 + 1) * MAX_SIGNER_IN_MULTISIG + 2;
 		const tmp = new Uint8Array(maxLength);
 		tmp.set([0x03]);
-		tmp.set(bcs.ser('u16', 3).toBytes(), 1);
+		tmp.set(builder.ser('u16', 3).toBytes(), 1);
 		let i = 3;
 		for (const { publicKey, weight } of multiSigPublicKey.getPublicKeys()) {
 			const bytes = publicKey.toSuiBytes();
@@ -353,24 +356,23 @@ describe('Publickey', () => {
 			'AwIANe9gJJmT5m1UvpV8Hj7nOyif76rS5Zgg1bi7VApts+KwtSc2Bg8WJ6LBfGnZKugrOqtQsk5d2Q+IMRLD4hYmBQFYlrlXc01/ZSdgwSD3eGEdm6kxwtOwAvTWdb2wNZP2Hnkgrh+indYN4s2Qd99iYCz+xsY6aT5lpOBsDZb2x9LyAwADAFriILSy9l6XfBLt5hV5/1FwtsIsAGFow3tefGGvAYCDAQECHRUjB8a3Kw7QQYsOcM2A5/UpW42G9XItP1IT+9I5TzYCAgInMis6iRoKKA1rwfssuyPSj1SQb9ZAf190H23vV2JgmgMDAA==',
 		);
 
-		const decoded = bcs.MultiSig.parse(fromB64(multisig).slice(1));
-
-		expect(decoded).toEqual({
-			bitmap: 3,
-			sigs: [
-				{
-					ED25519: Array.from(
-						parseSerializedSignature((await k1.signPersonalMessage(data)).signature).signature!,
-					),
-				},
-				{
-					Secp256k1: Array.from(
-						parseSerializedSignature((await k2.signPersonalMessage(data)).signature).signature!,
-					),
-				},
-			],
-			multisig_pk: bcs.MultiSigPublicKey.parse(multiSigPublicKey.toRawBytes()),
-		});
+		const decoded = decodeMultiSig(multisig);
+		expect(decoded).toEqual([
+			{
+				signature: parseSerializedSignature((await k1.signPersonalMessage(data)).signature)
+					.signature,
+				signatureScheme: k1.getKeyScheme(),
+				pubKey: pk1,
+				weight: 1,
+			},
+			{
+				signature: parseSerializedSignature((await k2.signPersonalMessage(data)).signature)
+					.signature,
+				signatureScheme: k2.getKeyScheme(),
+				pubKey: pk2,
+				weight: 2,
+			},
+		]);
 	});
 
 	it('`combinePartialSignatures()` should handle invalid parameters', async () => {
@@ -421,7 +423,7 @@ describe('Publickey', () => {
 		const multisig = multiSigPublicKey.combinePartialSignatures([sig1.signature, sig2.signature]);
 
 		const bytes = fromB64(multisig);
-		const multiSigStruct: MultiSigStruct = bcs.de('MultiSig', bytes.slice(1));
+		const multiSigStruct: MultiSigStruct = builder.de('MultiSig', bytes.slice(1));
 
 		const parsedPartialSignatures = parsePartialSignatures(multiSigStruct);
 

@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useGetDynamicFields, useGetObject } from '@mysten/core';
-import { useSuiClientQuery } from '@mysten/dapp-kit';
+import { useNormalizedMoveStruct } from '@mysten/dapp-kit';
 import { type SuiObjectResponse } from '@mysten/sui.js/client';
 import { Heading } from '@mysten/ui';
 import { type ReactNode, useState } from 'react';
 
 import { DynamicFieldsCard } from '~/components/Object/DynamicFieldsCard';
 import { ObjectFieldsCard } from '~/components/Object/ObjectFieldsCard';
-import TransactionBlocksForAddress from '~/components/TransactionBlocksForAddress';
+import TransactionBlocksForAddress from '~/components/TransactionBlocksForAddress/TransactionBlocksForAddress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/ui/Tabs';
 
 function FieldsContainer({ children }: { children: ReactNode }) {
@@ -26,7 +26,7 @@ enum TABS_VALUES {
 }
 
 function useObjectFieldsCard(id: string) {
-	const { data: suiObjectResponseData, isPending, isError } = useGetObject(id);
+	const { data: suiObjectResponseData, isLoading, isError } = useGetObject(id);
 
 	const objectType =
 		suiObjectResponseData?.data?.type ??
@@ -39,10 +39,9 @@ function useObjectFieldsCard(id: string) {
 	// Get the normalized struct for the object
 	const {
 		data: normalizedStructData,
-		isPending: loadingNormalizedStruct,
+		isLoading: loadingNormalizedStruct,
 		isError: errorNormalizedMoveStruct,
-	} = useSuiClientQuery(
-		'getNormalizedMoveStruct',
+	} = useNormalizedMoveStruct(
 		{
 			package: packageId,
 			module: moduleName,
@@ -54,21 +53,23 @@ function useObjectFieldsCard(id: string) {
 	);
 
 	return {
-		loading: isPending || loadingNormalizedStruct,
-		isError: isError || errorNormalizedMoveStruct,
+		loading: isLoading || loadingNormalizedStruct,
+		error: isError || errorNormalizedMoveStruct,
 		normalizedStructData,
 		suiObjectResponseData,
 		objectType,
 	};
 }
 
-export function FieldsContent({ objectId }: { objectId: string }) {
+export function TokenView({ data }: { data: SuiObjectResponse }) {
+	const objectId = data.data?.objectId!;
+
 	const {
 		normalizedStructData,
 		suiObjectResponseData,
 		objectType,
 		loading: objectFieldsCardLoading,
-		isError: objectFieldsCardError,
+		error: objectFieldsCardError,
 	} = useObjectFieldsCard(objectId);
 
 	const fieldsCount = normalizedStructData?.fields.length;
@@ -80,50 +81,42 @@ export function FieldsContent({ objectId }: { objectId: string }) {
 	const renderDynamicFields = !!dynamicFieldsData?.pages?.[0].data.length;
 
 	return (
-		<Tabs size="lg" value={activeTab} onValueChange={setActiveTab}>
-			<TabsList>
-				<TabsTrigger value={TABS_VALUES.FIELDS}>
-					<Heading variant="heading4/semibold">{fieldsCount} Fields</Heading>
-				</TabsTrigger>
-
-				{renderDynamicFields && (
-					<TabsTrigger value={TABS_VALUES.DYNAMIC_FIELDS}>
-						<Heading variant="heading4/semibold">Dynamic Fields</Heading>
+		<div className="flex flex-col flex-nowrap gap-14">
+			<Tabs size="lg" value={activeTab} onValueChange={setActiveTab}>
+				<TabsList>
+					<TabsTrigger value={TABS_VALUES.FIELDS}>
+						<Heading variant="heading4/semibold">{fieldsCount} Fields</Heading>
 					</TabsTrigger>
-				)}
-			</TabsList>
 
-			<TabsContent value={TABS_VALUES.FIELDS}>
-				<FieldsContainer>
-					<ObjectFieldsCard
-						objectType={objectType || ''}
-						normalizedStructData={normalizedStructData}
-						suiObjectResponseData={suiObjectResponseData}
-						loading={objectFieldsCardLoading}
-						error={objectFieldsCardError}
-						id={objectId}
-					/>
-				</FieldsContainer>
-			</TabsContent>
-			{renderDynamicFields && (
-				<TabsContent value={TABS_VALUES.DYNAMIC_FIELDS}>
+					{renderDynamicFields && (
+						<TabsTrigger value={TABS_VALUES.DYNAMIC_FIELDS}>
+							<Heading variant="heading4/semibold">Dynamic Fields</Heading>
+						</TabsTrigger>
+					)}
+				</TabsList>
+
+				<TabsContent value={TABS_VALUES.FIELDS}>
 					<FieldsContainer>
-						<DynamicFieldsCard id={objectId} />
+						<ObjectFieldsCard
+							objectType={objectType || ''}
+							normalizedStructData={normalizedStructData}
+							suiObjectResponseData={suiObjectResponseData}
+							loading={objectFieldsCardLoading}
+							error={objectFieldsCardError}
+							id={objectId}
+						/>
 					</FieldsContainer>
 				</TabsContent>
-			)}
-		</Tabs>
-	);
-}
+				{renderDynamicFields && (
+					<TabsContent value={TABS_VALUES.DYNAMIC_FIELDS}>
+						<FieldsContainer>
+							<DynamicFieldsCard id={objectId} />
+						</FieldsContainer>
+					</TabsContent>
+				)}
+			</Tabs>
 
-export function TokenView({ data }: { data: SuiObjectResponse }) {
-	const objectId = data.data?.objectId!;
-
-	return (
-		<div className="flex flex-col flex-nowrap gap-14">
-			<FieldsContent objectId={objectId} />
-
-			<TransactionBlocksForAddress address={objectId} header="Transaction Blocks" />
+			<TransactionBlocksForAddress address={objectId} isObject />
 		</div>
 	);
 }

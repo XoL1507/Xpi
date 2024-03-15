@@ -1,10 +1,11 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { Text } from '_app/shared/text';
-import { CoinIcon } from '_components/coin-icon';
 import { useFormatCoin } from '@mysten/core';
 import { type ReactNode } from 'react';
+
+import { Text } from '_app/shared/text';
+import { CoinIcon } from '_components/coin-icon';
 
 type CoinItemProps = {
 	coinType: string;
@@ -12,40 +13,23 @@ type CoinItemProps = {
 	isActive?: boolean;
 	usd?: number;
 	centerAction?: ReactNode;
-	subtitle?: string;
 };
 
-export function CoinItem({
-	coinType,
-	balance,
-	isActive,
-	usd,
-	centerAction,
-	subtitle,
-}: CoinItemProps) {
+export function CoinItem({ coinType, balance, isActive, usd, centerAction }: CoinItemProps) {
 	const [formatted, symbol, { data: coinMeta }] = useFormatCoin(balance, coinType);
 
 	return (
 		<div className="flex gap-2.5 w-full py-3 pl-1.5 pr-2 justify-center items-center rounded hover:bg-sui/10">
 			<CoinIcon coinType={coinType} size={isActive ? 'sm' : 'md'} />
 			<div className="flex flex-1 gap-1.5 justify-between items-center">
-				<div className="max-w-token-width">
+				<div className="flex flex-col gap-1.5">
 					<Text variant="body" color="gray-90" weight="semibold" truncate>
 						{coinMeta?.name || symbol} {isActive ? 'available' : ''}
 					</Text>
-					{!isActive && !subtitle ? (
-						<div className="mt-1.5">
-							<Text variant="subtitle" color="steel-dark" weight="medium">
-								{symbol}
-							</Text>
-						</div>
-					) : null}
-					{subtitle ? (
-						<div className="mt-1.5">
-							<Text variant="subtitle" color="steel" weight="medium">
-								{subtitle}
-							</Text>
-						</div>
+					{!isActive ? (
+						<Text variant="subtitle" color="steel-dark" weight="medium">
+							{symbol}
+						</Text>
 					) : null}
 				</div>
 
@@ -57,8 +41,8 @@ export function CoinItem({
 							{formatted}
 						</Text>
 					) : (
-						<div data-testid={coinType} className="max-w-token-width">
-							<Text variant="body" color="gray-90" weight="medium" truncate>
+						<div data-testid={coinType} className="flex flex-col justify-end items-end gap-1.5">
+							<Text variant="body" color="gray-90" weight="medium">
 								{formatted} {symbol}
 							</Text>
 							{usd && (

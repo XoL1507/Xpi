@@ -1,19 +1,19 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { Button } from '_app/shared/ButtonUI';
-import { type AccountType } from '_src/background/accounts/Account';
-import { useAccounts } from '_src/ui/app/hooks/useAccounts';
 import { Navigate, useNavigate } from 'react-router-dom';
 
+import { useForgotPasswordContext } from './ForgotPasswordPage';
 import { RecoverAccountsGroup } from '../../../components/accounts/RecoverAccountsGroup';
 import { useAccountGroups } from '../../../hooks/useAccountGroups';
 import { Heading } from '../../../shared/heading';
 import { Text } from '../../../shared/text';
 import { getGroupTitle } from '../manage/AccountGroup';
-import { useForgotPasswordContext } from './ForgotPasswordPage';
+import { Button } from '_app/shared/ButtonUI';
+import { type AccountType } from '_src/background/accounts/Account';
+import { useAccounts } from '_src/ui/app/hooks/useAccounts';
 
-const zkLoginType: AccountType = 'zkLogin';
+const zkLoginType: AccountType = 'zk';
 
 export function ResetWarningPage() {
 	const navigate = useNavigate();
@@ -26,11 +26,11 @@ export function ResetWarningPage() {
 				!value.find(({ accountSourceID }) => accountSourceID === sourceID),
 		),
 	);
-	const { isPending } = useAccounts();
+	const { isLoading } = useAccounts();
 	if (!value.length) {
 		return <Navigate to="/accounts/forgot-password" replace />;
 	}
-	if (!accountGroupsToRemove.length && !isPending) {
+	if (!accountGroupsToRemove.length && !isLoading) {
 		return <Navigate to="../reset" replace />;
 	}
 	return (

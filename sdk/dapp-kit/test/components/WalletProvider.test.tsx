@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { act, renderHook, waitFor } from '@testing-library/react';
-
+import { createWalletProviderContextWrapper, registerMockWallet } from '../test-utils.js';
 import {
 	useAccounts,
 	useConnectWallet,
@@ -10,10 +10,9 @@ import {
 	useCurrentWallet,
 	useDisconnectWallet,
 	useWallets,
-} from '../../src/index.js';
+} from 'dapp-kit/src';
 import { createMockAccount } from '../mocks/mockAccount.js';
-import { suiFeatures, superCoolFeature } from '../mocks/mockFeatures.js';
-import { createWalletProviderContextWrapper, registerMockWallet } from '../test-utils.js';
+import { superCoolFeature } from '../mocks/mockFeatures.js';
 
 describe('WalletProvider', () => {
 	test('the correct wallet and account information is returned on initial render', () => {
@@ -27,24 +26,15 @@ describe('WalletProvider', () => {
 			{ wrapper },
 		);
 
-		expect(result.current.currentWallet.isConnected).toBeFalsy();
+		expect(result.current.currentWallet).toBeFalsy();
 		expect(result.current.currentAccount).toBeFalsy();
 		expect(result.current.wallets).toHaveLength(0);
 	});
 
 	test('the list of wallets is ordered correctly by preference', () => {
-		const { unregister: unregister1 } = registerMockWallet({
-			walletName: 'Mock Wallet 1',
-			features: suiFeatures,
-		});
-		const { unregister: unregister2 } = registerMockWallet({
-			walletName: 'Mock Wallet 2',
-			features: suiFeatures,
-		});
-		const { unregister: unregister3 } = registerMockWallet({
-			walletName: 'Mock Wallet 3',
-			features: suiFeatures,
-		});
+		const { unregister: unregister1 } = registerMockWallet({ walletName: 'Mock Wallet 1' });
+		const { unregister: unregister2 } = registerMockWallet({ walletName: 'Mock Wallet 2' });
+		const { unregister: unregister3 } = registerMockWallet({ walletName: 'Mock Wallet 3' });
 
 		const wrapper = createWalletProviderContextWrapper({
 			preferredWallets: ['Mock Wallet 2', 'Mock Wallet 1'],
@@ -72,18 +62,9 @@ describe('WalletProvider', () => {
 	});
 
 	test('unregistered wallets are removed from the list of wallets', async () => {
-		const { unregister: unregister1 } = registerMockWallet({
-			walletName: 'Mock Wallet 1',
-			features: suiFeatures,
-		});
-		const { unregister: unregister2 } = registerMockWallet({
-			walletName: 'Mock Wallet 2',
-			features: suiFeatures,
-		});
-		const { unregister: unregister3 } = registerMockWallet({
-			walletName: 'Mock Wallet 3',
-			features: suiFeatures,
-		});
+		const { unregister: unregister1 } = registerMockWallet({ walletName: 'Mock Wallet 1' });
+		const { unregister: unregister2 } = registerMockWallet({ walletName: 'Mock Wallet 2' });
+		const { unregister: unregister3 } = registerMockWallet({ walletName: 'Mock Wallet 3' });
 
 		const wrapper = createWalletProviderContextWrapper();
 		const { result } = renderHook(() => useWallets(), { wrapper });
@@ -131,19 +112,17 @@ describe('WalletProvider', () => {
 			() => ({
 				connectWallet: useConnectWallet(),
 				currentAccount: useCurrentAccount(),
+				currentWallet: useCurrentWallet(),
 				accounts: useAccounts(),
 			}),
 			{ wrapper },
 		);
 
 		result.current.connectWallet.mutate({ wallet: mockWallet });
-
 		await waitFor(() => expect(result.current.connectWallet.isSuccess).toBe(true));
 
 		// Simulate deleting the account we're currently connected to.
-		act(() => {
-			mockWallet.deleteFirstAccount();
-		});
+		mockWallet.deleteFirstAccount();
 
 		expect(result.current.currentAccount).toBeTruthy();
 		await waitFor(() => {
@@ -160,7 +139,6 @@ describe('WalletProvider', () => {
 			const { unregister, mockWallet } = registerMockWallet({
 				walletName: 'Mock Wallet 1',
 				accounts: [createMockAccount(), createMockAccount()],
-				features: suiFeatures,
 			});
 
 			const wrapper = createWalletProviderContextWrapper({
@@ -188,10 +166,8 @@ describe('WalletProvider', () => {
 				{ wrapper },
 			);
 
-			await waitFor(() => expect(updatedResult.current.currentWallet.isConnected).toBe(true));
-			expect(updatedResult.current.currentWallet.currentWallet!.name).toStrictEqual(
-				'Mock Wallet 1',
-			);
+			await waitFor(() => expect(updatedResult.current.currentWallet).toBeTruthy());
+			expect(updatedResult.current.currentWallet!.name).toStrictEqual('Mock Wallet 1');
 
 			expect(updatedResult.current.currentAccount).toBeTruthy();
 			expect(updatedResult.current.currentAccount!.address).toStrictEqual(
@@ -199,50 +175,6 @@ describe('WalletProvider', () => {
 			);
 
 			act(() => unregister());
-		});
-
-		test('auto-connecting to an id-based wallet works', async () => {
-			const wallet1 = registerMockWallet({
-				id: '1',
-				walletName: 'Mock Wallet',
-				features: suiFeatures,
-			});
-
-			const wallet2 = registerMockWallet({
-				id: '2',
-				walletName: 'Mock Wallet',
-				features: suiFeatures,
-			});
-
-			const wrapper = createWalletProviderContextWrapper({
-				autoConnect: true,
-			});
-			const { result, unmount } = renderHook(() => useConnectWallet(), { wrapper });
-
-			result.current.mutate({ wallet: wallet1.mockWallet });
-
-			await waitFor(() => expect(result.current.isSuccess).toBe(true));
-
-			// Now unmount our component tree to simulate someone leaving the page.
-			unmount();
-
-			// Render our component tree again and auto-connect to our previously connected wallet account.
-			const { result: updatedResult } = renderHook(
-				() => ({
-					currentWallet: useCurrentWallet(),
-					currentAccount: useCurrentAccount(),
-				}),
-				{ wrapper },
-			);
-
-			await waitFor(() => expect(updatedResult.current.currentWallet.isConnected).toBe(true));
-			expect(updatedResult.current.currentWallet.currentWallet!.id).toStrictEqual('1');
-			expect(updatedResult.current.currentAccount).toBeTruthy();
-
-			act(() => {
-				wallet1.unregister();
-				wallet2.unregister();
-			});
 		});
 
 		test('wallet connection info is removed upon disconnection', async () => {
@@ -257,6 +189,7 @@ describe('WalletProvider', () => {
 				() => ({
 					connectWallet: useConnectWallet(),
 					disconnectWallet: useDisconnectWallet(),
+					currentWallet: useCurrentWallet(),
 					currentAccount: useCurrentAccount(),
 				}),
 				{ wrapper },
@@ -276,7 +209,7 @@ describe('WalletProvider', () => {
 
 			// Render our component tree again and assert that we weren't able to auto-connect.
 			const { result: updatedResult } = renderHook(() => useCurrentWallet(), { wrapper });
-			expect(updatedResult.current.isConnected).toBeFalsy();
+			expect(updatedResult.current).toBeFalsy();
 
 			act(() => unregister());
 		});

@@ -1,20 +1,19 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { type PermissionType } from '_src/shared/messaging/messages/payloads/permissions';
-import { getValidDAppUrl } from '_src/shared/utils';
 import { CheckFill16 } from '@mysten/icons';
-import cn from 'clsx';
-
-import { useAccountByAddress } from '../hooks/useAccountByAddress';
-import { Heading } from '../shared/heading';
-import { Link } from '../shared/Link';
+import cn from 'classnames';
+import { DAppPermissionsList } from './DAppPermissionsList';
+import { SummaryCard } from './SummaryCard';
 import { AccountIcon } from './accounts/AccountIcon';
 import { AccountItem } from './accounts/AccountItem';
 import { LockUnlockButton } from './accounts/LockUnlockButton';
 import { useUnlockAccount } from './accounts/UnlockAccountContext';
-import { DAppPermissionsList } from './DAppPermissionsList';
-import { SummaryCard } from './SummaryCard';
+import { useAccountByAddress } from '../hooks/useAccountByAddress';
+import { Link } from '../shared/Link';
+import { Heading } from '../shared/heading';
+import { type PermissionType } from '_src/shared/messaging/messages/payloads/permissions';
+import { getValidDAppUrl } from '_src/shared/utils';
 
 export type DAppInfoCardProps = {
 	name: string;
@@ -34,7 +33,7 @@ export function DAppInfoCard({
 	const validDAppUrl = getValidDAppUrl(url);
 	const appHostname = validDAppUrl?.hostname ?? url;
 	const { data: account } = useAccountByAddress(connectedAddress);
-	const { unlockAccount, lockAccount, isPending, accountToUnlock } = useUnlockAccount();
+	const { unlockAccount, lockAccount, isLoading, accountToUnlock } = useUnlockAccount();
 
 	return (
 		<div className="bg-white p-6 flex flex-col gap-5">
@@ -70,7 +69,7 @@ export function DAppInfoCard({
 								<div className="h-4">
 									<LockUnlockButton
 										isLocked={account.isLocked}
-										isLoading={isPending && accountToUnlock?.id === account.id}
+										isLoading={isLoading && accountToUnlock?.id === account.id}
 										onClick={(e) => {
 											// prevent the account from being selected when clicking the lock button
 											e.stopPropagation();
@@ -88,8 +87,6 @@ export function DAppInfoCard({
 							/>
 						</div>
 					}
-					hideCopy
-					hideExplorerLink
 				/>
 			) : null}
 			{permissions?.length ? (

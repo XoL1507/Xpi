@@ -1,15 +1,14 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import type { UseMutationOptions } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type {
 	StandardConnectInput,
 	StandardConnectOutput,
 	WalletAccount,
 	WalletWithRequiredFeatures,
 } from '@mysten/wallet-standard';
-import type { UseMutationOptions, UseMutationResult } from '@tanstack/react-query';
-import { useMutation } from '@tanstack/react-query';
-
 import { walletMutationKeys } from '../../constants/walletMutationKeys.js';
 import { useWalletStore } from './useWalletStore.js';
 
@@ -34,34 +33,17 @@ type UseConnectWalletMutationOptions = Omit<
 export function useConnectWallet({
 	mutationKey,
 	...mutationOptions
-}: UseConnectWalletMutationOptions = {}): UseMutationResult<
-	ConnectWalletResult,
-	Error,
-	ConnectWalletArgs,
-	unknown
-> {
+}: UseConnectWalletMutationOptions = {}) {
 	const setWalletConnected = useWalletStore((state) => state.setWalletConnected);
-	const setConnectionStatus = useWalletStore((state) => state.setConnectionStatus);
 
 	return useMutation({
 		mutationKey: walletMutationKeys.connectWallet(mutationKey),
-		mutationFn: async ({ wallet, accountAddress, ...connectArgs }) => {
-			try {
-				setConnectionStatus('connecting');
+		mutationFn: async ({ wallet, accountAddress, ...standardConnectInput }) => {
+			const connectResult = await wallet.features['standard:connect'].connect(standardConnectInput);
+			const selectedAccount = getSelectedAccount(connectResult.accounts, accountAddress);
 
-				const connectResult = await wallet.features['standard:connect'].connect(connectArgs);
-				const connectedSuiAccounts = connectResult.accounts.filter((account) =>
-					account.chains.some((chain) => chain.split(':')[0] === 'sui'),
-				);
-				const selectedAccount = getSelectedAccount(connectedSuiAccounts, accountAddress);
-
-				setWalletConnected(wallet, connectedSuiAccounts, selectedAccount);
-
-				return { accounts: connectedSuiAccounts };
-			} catch (error) {
-				setConnectionStatus('disconnected');
-				throw error;
-			}
+			setWalletConnected(wallet, selectedAccount);
+			return connectResult;
 		},
 		...mutationOptions,
 	});

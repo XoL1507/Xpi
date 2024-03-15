@@ -1,16 +1,15 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { act, renderHook, waitFor } from '@testing-library/react';
-
+import { renderHook, waitFor, act } from '@testing-library/react';
+import { useConnectWallet, useCurrentAccount } from 'dapp-kit/src';
+import { createWalletProviderContextWrapper, registerMockWallet } from '../test-utils.js';
+import { useSwitchAccount } from 'dapp-kit/src/hooks/wallet/useSwitchAccount.js';
 import {
 	WalletAccountNotFoundError,
 	WalletNotConnectedError,
-} from '../../src/errors/walletErrors.js';
-import { useSwitchAccount } from '../../src/hooks/wallet/useSwitchAccount.js';
-import { useConnectWallet, useCurrentAccount } from '../../src/index.js';
+} from 'dapp-kit/src/errors/walletErrors.js';
 import { createMockAccount } from '../mocks/mockAccount.js';
-import { createWalletProviderContextWrapper, registerMockWallet } from '../test-utils.js';
 
 describe('useSwitchAccount', () => {
 	test('throws an error when trying to switch accounts with no active connection', async () => {

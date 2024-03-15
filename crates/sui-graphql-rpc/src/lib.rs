@@ -5,27 +5,19 @@ pub mod commands;
 pub mod config;
 pub mod server;
 
-pub(crate) mod functional_group;
-
-pub mod client;
-pub mod context_data;
+mod context_data;
 mod error;
-pub mod examples;
-pub mod extensions;
-mod metrics;
-mod mutation;
-pub mod test_infra;
+mod extensions;
+mod functional_group;
 mod types;
-pub mod utils;
 
 use async_graphql::*;
-use mutation::Mutation;
 use types::owner::ObjectOwner;
 
 use crate::types::query::Query;
 
 pub fn schema_sdl_export() -> String {
-    let schema = Schema::build(Query, Mutation, EmptySubscription)
+    let schema = Schema::build(Query, EmptyMutation, EmptySubscription)
         .register_output_type::<ObjectOwner>()
         .finish();
     schema.sdl()

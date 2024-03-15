@@ -8,16 +8,8 @@ use std::sync::Arc;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ReconfigCertStatus {
     AcceptAllCerts,
-
-    // User certs rejected, but we still accept certs received through consensus.
     RejectUserCerts,
-
-    // All certs rejected, including ones received through consensus.
-    // But we still accept other transactions from consensus (e.g. RandomnessStateUpdate).
     RejectAllCerts,
-
-    // All tx rejected, including system tx.
-    RejectAllTx,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -53,22 +45,7 @@ impl ReconfigState {
     }
 
     pub fn should_accept_consensus_certs(&self) -> bool {
-        matches!(
-            self.status,
-            ReconfigCertStatus::AcceptAllCerts | ReconfigCertStatus::RejectUserCerts
-        )
-    }
-
-    pub fn is_reject_all_certs(&self) -> bool {
-        matches!(self.status, ReconfigCertStatus::RejectAllCerts)
-    }
-
-    pub fn close_all_tx(&mut self) {
-        self.status = ReconfigCertStatus::RejectAllTx;
-    }
-
-    pub fn should_accept_tx(&self) -> bool {
-        !matches!(self.status, ReconfigCertStatus::RejectAllTx)
+        !matches!(self.status, ReconfigCertStatus::RejectAllCerts)
     }
 }
 

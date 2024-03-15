@@ -20,8 +20,8 @@ use sui_types::signature::GenericSignature;
 use sui_types::sui_system_state::SUI_SYSTEM_MODULE_NAME;
 use sui_types::transaction::{
     CallArg, ObjectArg, ProgrammableTransaction, Transaction, TransactionData,
-    DEFAULT_VALIDATOR_GAS_PRICE, TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE,
-    TEST_ONLY_GAS_UNIT_FOR_TRANSFER,
+    DEFAULT_VALIDATOR_GAS_PRICE, TEST_ONLY_GAS_UNIT_FOR_GENERIC,
+    TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE, TEST_ONLY_GAS_UNIT_FOR_TRANSFER,
 };
 use sui_types::{TypeTag, SUI_SYSTEM_PACKAGE_ID};
 
@@ -40,14 +40,6 @@ impl TestTransactionBuilder {
             gas_object,
             gas_price,
         }
-    }
-
-    pub fn sender(&self) -> SuiAddress {
-        self.sender
-    }
-
-    pub fn gas_object(&self) -> ObjectRef {
-        self.gas_object
     }
 
     pub fn move_call(
@@ -82,42 +74,6 @@ impl TestTransactionBuilder {
             package_id,
             "counter",
             "increment",
-            vec![CallArg::Object(ObjectArg::SharedObject {
-                id: counter_id,
-                initial_shared_version: counter_initial_shared_version,
-                mutable: true,
-            })],
-        )
-    }
-
-    pub fn call_counter_read(
-        self,
-        package_id: ObjectID,
-        counter_id: ObjectID,
-        counter_initial_shared_version: SequenceNumber,
-    ) -> Self {
-        self.move_call(
-            package_id,
-            "counter",
-            "value",
-            vec![CallArg::Object(ObjectArg::SharedObject {
-                id: counter_id,
-                initial_shared_version: counter_initial_shared_version,
-                mutable: false,
-            })],
-        )
-    }
-
-    pub fn call_counter_delete(
-        self,
-        package_id: ObjectID,
-        counter_id: ObjectID,
-        counter_initial_shared_version: SequenceNumber,
-    ) -> Self {
-        self.move_call(
-            package_id,
-            "counter",
-            "delete",
             vec![CallArg::Object(ObjectArg::SharedObject {
                 id: counter_id,
                 initial_shared_version: counter_initial_shared_version,
@@ -314,7 +270,7 @@ impl TestTransactionBuilder {
                 self.sender,
                 vec![self.gas_object],
                 pt,
-                self.gas_price * TEST_ONLY_GAS_UNIT_FOR_HEAVY_COMPUTATION_STORAGE,
+                self.gas_price * TEST_ONLY_GAS_UNIT_FOR_GENERIC,
                 self.gas_price,
             ),
             TestTransactionData::Empty => {
@@ -324,7 +280,7 @@ impl TestTransactionBuilder {
     }
 
     pub fn build_and_sign(self, signer: &dyn Signer<Signature>) -> Transaction {
-        Transaction::from_data_and_signer(self.build(), vec![signer])
+        Transaction::from_data_and_signer(self.build(), Intent::sui_transaction(), vec![signer])
     }
 
     pub fn build_and_sign_multisig(
@@ -333,17 +289,18 @@ impl TestTransactionBuilder {
         signers: &[&dyn Signer<Signature>],
     ) -> Transaction {
         let data = self.build();
-        let intent_msg = IntentMessage::new(Intent::sui_transaction(), data.clone());
+        let intent = Intent::sui_transaction();
+        let intent_msg = IntentMessage::new(intent.clone(), data.clone());
 
         let mut signatures = Vec::with_capacity(signers.len());
         for signer in signers {
-            signatures.push(Signature::new_secure(&intent_msg, *signer).into());
+            signatures.push(Signature::new_secure(&intent_msg, *signer));
         }
 
         let multisig =
             GenericSignature::MultiSig(MultiSig::combine(signatures, multisig_pk).unwrap());
 
-        Transaction::from_generic_sig_data(data, vec![multisig])
+        Transaction::from_generic_sig_data(data, intent, vec![multisig])
     }
 
     pub fn build_and_sign_multisig_legacy(
@@ -357,14 +314,14 @@ impl TestTransactionBuilder {
 
         let mut signatures = Vec::with_capacity(signers.len());
         for signer in signers {
-            signatures.push(Signature::new_secure(&intent_msg, *signer).into());
+            signatures.push(Signature::new_secure(&intent_msg, *signer));
         }
 
         let multisig = GenericSignature::MultiSigLegacy(
             MultiSigLegacy::combine(signatures, multisig_pk).unwrap(),
         );
 
-        Transaction::from_generic_sig_data(data, vec![multisig])
+        Transaction::from_generic_sig_data(data, intent, vec![multisig])
     }
 }
 
